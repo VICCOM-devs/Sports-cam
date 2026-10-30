@@ -26,7 +26,9 @@ CREATE TABLE IF NOT EXISTS matches (
   clock_started_at REAL,                      -- wall time when clock last started
   created_at REAL NOT NULL,
   started_at REAL,
-  ended_at REAL
+  ended_at REAL,
+  team_map TEXT,
+  rink TEXT NOT NULL DEFAULT 'iihf'
 );
 CREATE TABLE IF NOT EXISTS tokens (
   token TEXT PRIMARY KEY,
@@ -45,7 +47,8 @@ CREATE TABLE IF NOT EXISTS cameras (
   battery REAL,
   signal TEXT,
   joined_at REAL NOT NULL,
-  last_seen REAL NOT NULL
+  last_seen REAL NOT NULL,
+  calibration TEXT
 );
 CREATE TABLE IF NOT EXISTS events (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -67,6 +70,17 @@ class Database:
         path.parent.mkdir(parents=True, exist_ok=True)
         with self.conn() as c:
             c.executescript(SCHEMA)
+            self._migrate(c)
+
+    @staticmethod
+    def _migrate(c: sqlite3.Connection) -> None:
+        """Add columns introduced after the first release (SQLite has no IF NOT EXISTS for columns)."""
+        wanted = {"cameras": {"calibration": "TEXT"}, "matches": {"team_map": "TEXT", "rink": "TEXT NOT NULL DEFAULT 'iihf'"}}
+        for table, cols in wanted.items():
+            have = {r[1] for r in c.execute(f"PRAGMA table_info({table})")}
+            for col, typ in cols.items():
+                if col not in have:
+                    c.execute(f"ALTER TABLE {table} ADD COLUMN {col} {typ}")
 
     @contextmanager
     def conn(self) -> Iterator[sqlite3.Connection]:

@@ -11,10 +11,13 @@ from sportscam.config import Config  # noqa: E402
 from sportscam.main import create_app  # noqa: E402
 from sportscam.updates import UpdateChecker  # noqa: E402
 
+MODELS = Path("/home/claude/downloads/models")
+
 
 @pytest.fixture
 def client(tmp_path):
-    cfg = Config(data_dir=tmp_path, media_engine="pyrtc", update_url="http://127.0.0.1:1/none.json")
+    cfg = Config(data_dir=tmp_path, media_engine="pyrtc", update_url="http://127.0.0.1:1/none.json",
+                 models_dir_override=str(MODELS) if MODELS.exists() else "", vision=MODELS.exists())
     with TestClient(create_app(cfg)) as c:
         yield c
 
@@ -77,3 +80,24 @@ def test_update_gate_logic():
     assert UpdateChecker.evaluate({"min_version_code": 2, "latest_version_code": 3}, build=1)["status"] == "blocked"
     assert UpdateChecker.evaluate({"latest_version_code": 3, "force": True}, build=2)["status"] == "blocked"
     assert UpdateChecker.evaluate({}, build=1)["status"] == "current"
+
+
+def test_rink_and_calibration_api(client):
+    rink = client.get("/api/rink").json()
+    assert rink["length"] == 60 and any(l["id"] == "center" for l in rink["landmarks"])
+    c = client.post("/api/matches", json={"home": "A", "away": "B"}).json()
+    admin = {"X-Token": c["admin_token"]}
+    cam_tok = {"X-Token": client.post("/api/join", json={"code": c["match"]["code"], "role": "camera"}).json()["token"]}
+    cam = client.post("/api/cameras", json={"label": "Corner A"}, headers=cam_tok).json()["camera_id"]
+    by = {l["id"]: l for l in rink["landmarks"]}
+    pairs = [{"id": k, "px": 640 + 18 * by[k]["x"] - 4 * by[k]["y"], "py": 300 + 2 * by[k]["x"] + 9 * by[k]["y"]}
+             for k in ("center", "dot_home_L", "dot_home_R", "blue_home_L", "blue_home_R")]
+    r = client.post(f"/api/cameras/{cam}/calibration", json={"pairs": pairs}, headers=admin)
+    assert r.status_code == 200, r.text
+    assert r.json()["rms_error_m"] < 0.1 and len(r.json()["overlay"]["lines"]) == 5
+    st = client.get("/api/match", headers=admin).json()
+    assert st["cameras"][0]["calibrated"] is True
+    assert client.post(f"/api/cameras/{cam}/calibration", json={"pairs": pairs[:3]}, headers=admin).status_code == 422
+    assert client.get("/api/positions", headers=admin).json()["players"] == []
+    assert client.get("/api/stats", headers=admin).json()["source"] == "none"
+    assert client.post("/api/teams/map", json={"A": "away", "B": "home"}, headers=admin).json() == {"A": "away", "B": "home"}

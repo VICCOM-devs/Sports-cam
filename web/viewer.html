@@ -33,6 +33,21 @@
   .event .k { font-weight: 700; }
   .control { padding: 0 var(--s4) var(--s4); display: grid; gap: var(--s2); }
   .control .scorerow { display: grid; grid-template-columns: 1fr 1fr; gap: var(--s2); }
+  .tabs { display: flex; gap: var(--s2); padding: var(--s3) var(--s4) 0; }
+  .tabs .btn { min-height: 44px; flex: 1; }
+  .tabs .btn.on { border-color: var(--accent); background: var(--accent-soft); }
+  .pane.hidden { display: none; }
+  .rinkmap { width: 100%; background: var(--surface-1); border-radius: var(--r-card); border: 1px solid var(--stroke); }
+  .rinkmap .ice { fill: #0f1a24; stroke: var(--stroke); stroke-width: .3; }
+  .rinkmap .line { stroke: var(--text-faint); stroke-width: .25; }
+  .rinkmap .blue { stroke: #3b6fd8; } .rinkmap .red { stroke: #c23b4a; }
+  .rinkmap .p { stroke: #000; stroke-width: .25; transition: cx var(--t-base) linear, cy var(--t-base) linear; }
+  .rinkmap .p.ref { fill: #ddd; }
+  .rinkmap .lbl { font: 700 1.6px var(--font); fill: #fff; text-anchor: middle; paint-order: stroke; stroke: #000; stroke-width: .4px; pointer-events: none; }
+  .players { display: grid; gap: var(--s2); }
+  .prow { display: grid; grid-template-columns: 10px 1fr auto auto; gap: var(--s3); align-items: center; padding: var(--s3) var(--s4); background: var(--surface-1); border: 1px solid var(--stroke); border-radius: var(--r-card); }
+  .prow .num { font-weight: 800; font-variant-numeric: tabular-nums; text-align: right; }
+  .prow .u { font-size: 11px; color: var(--text-faint); display: block; text-align: right; }
   @media (min-width: 900px) {
     .layout { display: grid; grid-template-columns: 1fr 360px; gap: var(--s4); max-width: 1200px; margin: 0 auto; padding: var(--s4); }
     .side { border-left: 1px solid var(--stroke); }
@@ -49,6 +64,22 @@
 
 <div class="layout">
   <section class="main">
+    <div class="tabs" id="tabs">
+      <button class="btn on" data-pane="live" data-i18n="view.tab.live"></button>
+      <button class="btn" data-pane="rink" data-i18n="view.tab.rink"></button>
+      <button class="btn" data-pane="players" data-i18n="view.tab.players"></button>
+    </div>
+
+    <div class="pane hidden" id="pane-rink" style="padding: var(--s3) var(--s4)">
+      <svg class="rinkmap" id="rinkmap" viewBox="-32 -17 64 34"></svg>
+      <p class="dim hidden" id="rinkempty" style="margin-top: var(--s2)" data-i18n="view.rink.empty"></p>
+    </div>
+    <div class="pane hidden" id="pane-players" style="padding: var(--s3) var(--s4)">
+      <div class="players" id="players"></div>
+      <p class="dim" id="playersempty" data-i18n="view.players.empty"></p>
+    </div>
+
+    <div class="pane" id="pane-live">
     <div class="player" id="player">
       <video id="v0" autoplay playsinline muted></video>
       <video id="v1" autoplay playsinline muted></video>
@@ -79,6 +110,7 @@
     </div>
 
     <div class="tags" id="tags"></div>
+    </div>
   </section>
 
   <aside class="side">
@@ -231,6 +263,73 @@ function addEvent(ev, prepend = true) {
   prepend ? list.prepend(el) : list.append(el);
 }
 
+// ---------- tabs ----------
+let pane = "live";
+document.querySelectorAll("#tabs .btn").forEach((b) => (b.onclick = () => {
+  pane = b.dataset.pane; haptic();
+  document.querySelectorAll("#tabs .btn").forEach((x) => x.classList.toggle("on", x === b));
+  document.querySelectorAll(".pane").forEach((p) => p.classList.toggle("hidden", p.id !== `pane-${pane}`));
+  if (pane === "players") refreshStats();
+}));
+
+// ---------- rink map ----------
+let rink = null;
+const rinkSvg = $("rinkmap");
+let dotsLayer;
+async function drawRinkBase() {
+  rink = await api("/api/rink");
+  const o = rink.outline.map(([x, y]) => `${x},${-y}`).join(" ");
+  let s = `<polygon class="ice" points="${o}"/>`;
+  for (const [[x1, y1], [x2, y2]] of rink.lines) {
+    const cls = Math.abs(x1) < 1 ? "red" : Math.abs(x1) < 10 ? "blue" : "red";
+    s += `<line class="line ${cls}" x1="${x1}" y1="${-y1}" x2="${x2}" y2="${-y2}"/>`;
+  }
+  s += `<g id="dots"></g>`;
+  rinkSvg.innerHTML = s; dotsLayer = rinkSvg.querySelector("#dots");
+}
+const dots = new Map();
+function applyPositions(data) {
+  if (!dotsLayer) return;
+  const seen = new Set();
+  for (const p of data.players) {
+    seen.add(p.id);
+    let g = dots.get(p.id);
+    if (!g) {
+      g = document.createElementNS("http://www.w3.org/2000/svg", "g");
+      g.innerHTML = `<circle class="p" r="1"/><text class="lbl" dy="-1.6"></text>`;
+      dotsLayer.appendChild(g); dots.set(p.id, g);
+    }
+    const c = g.querySelector("circle"); c.setAttribute("cx", p.x); c.setAttribute("cy", -p.y);
+    c.setAttribute("fill", p.team === "home" ? state.home_color : p.team === "away" ? state.away_color : "#ddd");
+    const tx = g.querySelector("text"); tx.setAttribute("x", p.x); tx.setAttribute("y", -p.y);
+    tx.textContent = p.label || (p.speed_kmh > 3 ? `${Math.round(p.speed_kmh)}` : "");
+  }
+  for (const [id, g] of dots) if (!seen.has(id)) { g.remove(); dots.delete(id); }
+  $("rinkempty").classList.toggle("hidden", data.players.length > 0 || state?.vision?.players > 0);
+}
+
+// ---------- players / stats ----------
+async function refreshStats() {
+  try {
+    const r = await api("/api/stats", { token: sess.token });
+    const list = $("players"); list.innerHTML = "";
+    const players = (r.players || []).filter((p) => p.time_tracked_s >= 3).sort((a, b) => b.distance_m - a.distance_m);
+    $("playersempty").classList.toggle("hidden", players.length > 0);
+    for (const p of players) {
+      const el = document.createElement("div"); el.className = "prow";
+      const col = p.team === "home" ? state.home_color : p.team === "away" ? state.away_color : "#ddd";
+      el.innerHTML = `<span class="swatch" style="background:${col}"></span><span></span><span class="num"></span><span class="num"></span>`;
+      el.children[1].textContent = p.label || (p.team ? `#${p.id} · ${t(`team.${p.team}`)}` : `#${p.id}`);
+      const dist = p.distance_m >= 1000 ? `${(p.distance_m / 1000).toFixed(2)} km` : `${Math.round(p.distance_m)} m`;
+      el.children[2].innerHTML = `${dist}<span class="u">${t("stat.distance")}</span>`;
+      el.children[3].innerHTML = `${p.top_speed_kmh.toFixed(0)} km/h<span class="u">${t("stat.topspeed")}</span>`;
+      list.appendChild(el);
+    }
+  } catch { /* keep old */ }
+}
+drawRinkBase();
+setInterval(() => { if (pane === "players") refreshStats(); }, 3000);
+
 // ---------- boot ----------
 try {
   const full = await api("/api/match", { token: sess.token });
@@ -241,6 +340,7 @@ try {
 connectLive(sess.token, {
   onState: applyState,
   onEvent: (ev) => addEvent(ev),
+  onPositions: applyPositions,
   onStatus: (s) => $("net").classList.toggle("hidden", s === "online"),
 });
 </script>

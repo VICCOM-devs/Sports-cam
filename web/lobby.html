@@ -25,6 +25,11 @@
   .tabs { display: flex; gap: var(--s2); }
   .tabs .btn { min-height: 44px; }
   .tabs .btn.on { border-color: var(--accent); background: var(--accent-soft); }
+  .cam a.btn { min-height: 40px; padding: 0 12px; font-size: var(--small); }
+  .cluster { display: grid; gap: var(--s2); justify-items: center; padding: var(--s3); border-radius: var(--r-card); border: 1px solid var(--stroke); background: var(--surface-2); cursor: pointer; }
+  .cluster.on { border-color: var(--accent); background: var(--accent-soft); }
+  .cluster .strip { display: flex; gap: 4px; }
+  .cluster img { width: 32px; height: 64px; object-fit: cover; border-radius: 4px; }
 </style>
 </head>
 <body>
@@ -71,6 +76,12 @@
         <div class="row"><h2 data-i18n="lobby.cameras"></h2><span class="grow"></span><span class="chip faint" id="viewers"></span></div>
         <p class="dim" id="nocams" data-i18n="lobby.nocams"></p>
         <div class="cams" id="cams"></div>
+      </div>
+
+      <div class="card stack" id="teams">
+        <h2 data-i18n="lobby.teams"></h2>
+        <p class="dim" id="teamshint" data-i18n="lobby.teams.waiting"></p>
+        <div class="row" id="teamsamples" style="align-items: flex-start"></div>
       </div>
 
       <div class="row" style="flex-wrap: wrap">
@@ -123,6 +134,7 @@ function applyState(st) {
   clockBase = st.clock_ms; clockAt = performance.now(); running = st.clock_running;
   $("start").classList.toggle("hidden", st.status !== "lobby"); $("end").classList.toggle("hidden", st.status === "ended");
   $("nocams").classList.toggle("hidden", st.cameras.length > 0);
+  refreshTeams(st);
   const wrap = $("cams"); wrap.innerHTML = "";
   for (const c of st.cameras) {
     const el = document.createElement("div"); el.className = "card raised cam";
@@ -130,12 +142,34 @@ function applyState(st) {
     const bat = c.battery ?? null;
     el.innerHTML = `<div class="top"><span class="lbl"></span><span class="chip ${chip}"></span></div>
       <div class="row" style="font-size: var(--small)"><span class="dim grow"></span><span class="faint"></span></div>
-      <div class="bar ${bat !== null && bat < 20 ? "low" : ""}"><i style="width:${bat ?? 0}%"></i></div>`;
+      <div class="bar ${bat !== null && bat < 20 ? "low" : ""}"><i style="width:${bat ?? 0}%"></i></div>
+      <div class="row"><span class="chip ${c.calibrated ? "ok" : "warn"}" style="min-height:24px;font-size:11px"></span><span class="grow"></span><a class="btn"></a></div>`;
     el.querySelector(".lbl").textContent = c.label;
+    el.querySelector(".row:last-child .chip").textContent = c.calibrated ? t("lobby.calibrated") : t("lobby.notcalibrated");
+    const a = el.querySelector("a.btn"); a.textContent = t("lobby.calibrate"); a.href = `/calibrate.html?cam=${c.id}&t=${encodeURIComponent(adminToken)}`;
     el.querySelector(".chip").textContent = c.live ? t("status.live") : t(`status.${c.status}`);
     el.querySelector(".dim").textContent = `${c.viewers} ${t("lobby.viewers")}${c.recording ? " · " + t("status.recording") : ""}`;
     el.querySelector(".faint").textContent = bat !== null ? `${bat}%` : "";
     wrap.appendChild(el);
+  }
+}
+// team confirmation: show jersey crops per colour cluster; admin taps the home one
+let teamsReady = false, teamMap = null;
+async function refreshTeams(st) {
+  const v = st.vision || {};
+  if (!v.teams_ready) { $("teamshint").textContent = t("lobby.teams.waiting"); $("teamsamples").innerHTML = ""; teamsReady = false; return; }
+  if (teamsReady && JSON.stringify(teamMap) === JSON.stringify(v.team_map)) return;
+  teamsReady = true; teamMap = v.team_map;
+  $("teamshint").textContent = t("lobby.teams.hint");
+  const samples = await api("/api/teams/samples", { token: adminToken }).catch(() => ({ A: [], B: [] }));
+  const wrap = $("teamsamples"); wrap.innerHTML = "";
+  for (const k of ["A", "B"]) {
+    const d = document.createElement("div"); d.className = "cluster" + (teamMap?.[k] === "home" ? " on" : "");
+    d.innerHTML = `<div class="strip"></div><span class="label"></span>`;
+    d.querySelector(".label").textContent = teamMap?.[k] === "home" ? st.home : st.away;
+    for (const b64 of samples[k] || []) { const img = document.createElement("img"); img.src = `data:image/jpeg;base64,${b64}`; d.querySelector(".strip").appendChild(img); }
+    d.onclick = () => { haptic("medium"); api("/api/teams/map", { method: "POST", token: adminToken, body: k === "A" ? { A: "home", B: "away" } : { A: "away", B: "home" } }).then(() => toast(t("lobby.teams.done"))); };
+    wrap.appendChild(d);
   }
 }
 setInterval(() => { $("clock").textContent = fmtClock(clockBase + (running ? performance.now() - clockAt : 0)); }, 250);

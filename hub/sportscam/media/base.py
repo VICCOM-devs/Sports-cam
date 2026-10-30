@@ -36,3 +36,14 @@ class MediaEngine:
 
     async def start_recording(self, path: str, file: Path) -> None: ...
     async def stop_recording(self, path: str) -> None: ...
+
+    def frames(self, path: str, fps: float = 5.0):
+        """Async generator of (wall_time, bgr_ndarray) decoded frames, rate-limited to fps.
+        Used by the vision service and for calibration snapshots."""
+        raise NotImplementedError
+
+    async def snapshot(self, path: str):
+        """One BGR frame or None."""
+        async for _, frame in self.frames(path, fps=30):
+            return frame
+        return None

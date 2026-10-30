@@ -1,5 +1,5 @@
 // WebSocket state feed with automatic reconnect. Calls onState(state) and onEvent(event).
-export function connectLive(token, { onState, onEvent, onStatus }) {
+export function connectLive(token, { onState, onEvent, onStatus, onPositions }) {
   let ws, closed = false, delay = 500, ping;
   const open = () => {
     const proto = location.protocol === "https:" ? "wss" : "ws";
@@ -9,6 +9,7 @@ export function connectLive(token, { onState, onEvent, onStatus }) {
       const msg = JSON.parse(m.data);
       if (msg.type === "state") onState?.(msg.data);
       else if (msg.type === "event") onEvent?.(msg.data);
+      else if (msg.type === "positions") onPositions?.(msg.data);
     };
     ws.onclose = () => {
       clearInterval(ping);

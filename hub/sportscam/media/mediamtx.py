@@ -14,6 +14,7 @@ import platform
 import shutil
 import subprocess
 import tarfile
+import time
 import zipfile
 from pathlib import Path
 
@@ -31,7 +32,9 @@ logLevel: info
 api: yes
 apiAddress: 127.0.0.1:9997
 metrics: no
-rtsp: no
+rtsp: yes
+rtspAddress: 127.0.0.1:8554
+rtspTransports: [tcp]
 rtmp: no
 hls: no
 srt: yes
@@ -193,6 +196,44 @@ class MediaMtxEngine(MediaEngine):
             )
             for it in items
         }
+
+    async def frames(self, path: str, fps: float = 5.0):
+        """Decode the stream over local RTSP with OpenCV in a worker thread."""
+        import cv2
+
+        loop = asyncio.get_running_loop()
+        q: asyncio.Queue = asyncio.Queue(maxsize=2)
+        stop = False
+
+        def worker():
+            cap = cv2.VideoCapture(f"rtsp://127.0.0.1:8554/{path}", cv2.CAP_FFMPEG)
+            last = 0.0
+            try:
+                while not stop and cap.isOpened():
+                    ok, frame = cap.read()
+                    if not ok:
+                        break
+                    now = time.time()
+                    if now - last < 1.0 / fps:
+                        continue
+                    last = now
+                    if q.full():
+                        continue
+                    loop.call_soon_threadsafe(q.put_nowait, (now, frame))
+            finally:
+                cap.release()
+                loop.call_soon_threadsafe(q.put_nowait, None)
+
+        fut = loop.run_in_executor(None, worker)
+        try:
+            while True:
+                item = await q.get()
+                if item is None:
+                    return
+                yield item
+        finally:
+            stop = True
+            await fut
 
     async def _set_record(self, path: str, on: bool) -> None:
         body = {"record": on}

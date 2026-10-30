@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import asyncio
 import io
+import json
 import logging
 import time
 import uuid
@@ -22,6 +23,8 @@ from .db import Database
 from .events import EventBus
 from .media.base import MediaEngine
 from .updates import UpdateChecker
+from .vision.rink import TEMPLATES, Calibration, calibrate
+from .vision.service import VisionService
 
 log = logging.getLogger("sportscam")
 WEB_DIR = Path(__file__).resolve().parents[2] / "web"
@@ -40,6 +43,10 @@ class Hub:
         self.bus = EventBus()
         self.media = media
         self.updates = UpdateChecker(cfg.update_url)
+        self.vision = VisionService(media, self.bus, cfg.models_dir, cfg.recordings_dir,
+                                    model=cfg.vision_model, fps=cfg.vision_fps)
+        if not cfg.vision:
+            self.vision.enabled = False
 
     # -- helpers
     def public_url(self, secure: bool = False) -> str:
@@ -62,6 +69,7 @@ class Hub:
             c["live"] = bool(s and s.live)
             c["viewers"] = s.viewers if s else 0
             c["recording"] = bool(s and s.recording)
+            c["calibrated"] = bool(c.pop("calibration", None))
             cams.append(c)
         return {
             "id": m["id"], "code": m["code"], "sport": m["sport"],
@@ -73,6 +81,7 @@ class Hub:
             "cameras": cams,
             "viewers": self.bus.count(m["id"]),
             "server_time": time.time(),
+            "vision": self.vision.status(m["id"]),
         }
 
     async def broadcast_state(self, match_id: str) -> None:
@@ -103,6 +112,8 @@ def create_app(cfg: Config | None = None, media: MediaEngine | None = None) -> F
     @asynccontextmanager
     async def lifespan(app: FastAPI):
         await hub.media.start()
+        if hub.cfg.vision:
+            await hub.vision.start()
         hub.updates.start()
         poll = asyncio.create_task(_poll_cameras(hub))
         log.info("%s %s (build %s) on %s and %s, media=%s", version.DISPLAY_NAME, version.SEMVER,
@@ -112,6 +123,7 @@ def create_app(cfg: Config | None = None, media: MediaEngine | None = None) -> F
         finally:
             poll.cancel()
             await hub.updates.stop()
+            await hub.vision.stop()
             await hub.media.stop()
 
     app = FastAPI(title=version.DISPLAY_NAME, version=version.SEMVER, lifespan=lifespan)
@@ -140,6 +152,8 @@ async def _poll_cameras(hub: Hub) -> None:
                         changed = True
                     if s and s.live and m["status"] == "live" and not s.recording and hub.cfg.record:
                         await _record(hub, m, c["id"])
+                    if s and s.live and hub.vision.enabled:
+                        hub.vision.ensure_camera(m, c, stream_path(m, c["id"]))
                 if changed or hub.bus.count(m["id"]):
                     await hub.broadcast_state(m["id"])
         except Exception:
@@ -197,6 +211,22 @@ class ScoreBody(BaseModel):
 class ClockBody(BaseModel):
     running: bool
     set_ms: int | None = None
+
+
+class LandmarkPair(BaseModel):
+    id: str
+    px: float
+    py: float
+
+
+class CalibrationBody(BaseModel):
+    template: str = "iihf"
+    pairs: list[LandmarkPair] = Field(min_length=4, max_length=40)
+
+
+class TeamMapBody(BaseModel):
+    A: Literal["home", "away"]
+    B: Literal["home", "away"]
 
 
 # --------------------------------------------------------------------------- routes
@@ -301,6 +331,7 @@ def register_routes(app: FastAPI, hub: Hub) -> None:
                             clock_running=0, clock_base_ms=hub.clock_ms(m2))
         for c in hub.db.cameras(m["id"]):
             await hub.media.stop_recording(stream_path(m, c["id"]))
+        await hub.vision.stop_match(m["id"])
         await hub.broadcast_state(m["id"])
         return hub.match_state(hub.db.match(m["id"]))
 
@@ -367,6 +398,96 @@ def register_routes(app: FastAPI, hub: Hub) -> None:
             raise HTTPException(404, "camera not in this match")
         hub.db.update_camera(cam_id, last_seen=time.time(), battery=body.battery, signal=body.signal)
         return {"ok": True}
+
+    # -- rink, calibration, tracking
+    @app.get("/api/rink")
+    async def rink(template: str = "iihf"):
+        if template not in TEMPLATES:
+            raise HTTPException(404, "unknown rink template")
+        return TEMPLATES[template].to_dict()
+
+    @app.get("/api/cameras/{cam_id}/snapshot.jpg")
+    async def snapshot(cam_id: str, dep=Depends(auth("scorekeeper"))):
+        import cv2
+
+        _, m = dep
+        c = hub.db.camera(cam_id)
+        if not c or c["match_id"] != m["id"]:
+            raise HTTPException(404, "camera not in this match")
+        frame = await hub.media.snapshot(stream_path(m, cam_id))
+        if frame is None:
+            raise HTTPException(404, "camera is not live")
+        ok, buf = cv2.imencode(".jpg", frame, [cv2.IMWRITE_JPEG_QUALITY, 85])
+        return Response(buf.tobytes(), media_type="image/jpeg", headers={"Cache-Control": "no-store"})
+
+    @app.get("/api/cameras/{cam_id}/calibration")
+    async def get_calibration(cam_id: str, dep=Depends(auth("viewer"))):
+        _, m = dep
+        c = hub.db.camera(cam_id)
+        if not c or c["match_id"] != m["id"]:
+            raise HTTPException(404, "camera not in this match")
+        return json.loads(c["calibration"]) if c.get("calibration") else None
+
+    @app.post("/api/cameras/{cam_id}/calibration")
+    async def set_calibration(cam_id: str, body: CalibrationBody, dep=Depends(auth("scorekeeper"))):
+        _, m = dep
+        c = hub.db.camera(cam_id)
+        if not c or c["match_id"] != m["id"]:
+            raise HTTPException(404, "camera not in this match")
+        if body.template not in TEMPLATES:
+            raise HTTPException(400, "unknown rink template")
+        try:
+            cal = calibrate(TEMPLATES[body.template], [p.model_dump() for p in body.pairs])
+        except ValueError as e:
+            raise HTTPException(400, str(e))
+        hub.db.update_camera(cam_id, calibration=json.dumps(cal.to_dict()))
+        hub.vision.set_calibration(m["id"], cam_id, cal)
+        await hub.broadcast_state(m["id"])
+        # projected rink lines in image pixels, so the client can draw the overlay
+        tpl = TEMPLATES[body.template]
+        overlay = {"lines": [[cal.rink_to_image(*a), cal.rink_to_image(*b)] for a, b in tpl.lines()],
+                   "outline": [cal.rink_to_image(x, y) for x, y in tpl.outline()]}
+        return {"rms_error_m": cal.rms_error_m, "overlay": overlay}
+
+    @app.delete("/api/cameras/{cam_id}/calibration")
+    async def clear_calibration(cam_id: str, dep=Depends(auth("scorekeeper"))):
+        _, m = dep
+        hub.db.update_camera(cam_id, calibration=None)
+        hub.vision.set_calibration(m["id"], cam_id, None)
+        return Response(status_code=204)
+
+    @app.get("/api/positions")
+    async def positions(dep=Depends(auth("viewer"))):
+        _, m = dep
+        return {"t": time.time(), "players": hub.vision.positions(m["id"])}
+
+    @app.get("/api/stats")
+    async def stats(dep=Depends(auth("viewer"))):
+        _, m = dep
+        live = hub.vision.stats(m["id"])
+        if live:
+            return {"source": "live", "players": live}
+        f = hub.cfg.recordings_dir / m["code"] / "tracking.json"
+        if f.exists():
+            return {"source": "file", **json.loads(f.read_text())}
+        return {"source": "none", "players": []}
+
+    @app.get("/api/teams/samples")
+    async def team_samples(dep=Depends(auth("scorekeeper"))):
+        import base64
+
+        _, m = dep
+        s = hub.vision.team_samples(m["id"])
+        return {k: [base64.b64encode(b).decode() for b in v] for k, v in s.items()}
+
+    @app.post("/api/teams/map")
+    async def team_map(body: TeamMapBody, dep=Depends(auth("scorekeeper"))):
+        _, m = dep
+        mapping = {"A": body.A, "B": body.B}
+        hub.db.update_match(m["id"], team_map=json.dumps({"mapping": mapping}))
+        hub.vision.set_team_map(m["id"], mapping)
+        await hub.broadcast_state(m["id"])
+        return mapping
 
     # -- WHIP / WHEP signalling
     @app.post("/whip/{cam_id}")
@@ -445,7 +566,7 @@ def register_routes(app: FastAPI, hub: Hub) -> None:
             return HTMLResponse(html, headers={"Cache-Control": "no-cache"})
         return handler
 
-    for name in ("index.html", "camera.html", "viewer.html", "lobby.html"):
+    for name in ("index.html", "camera.html", "viewer.html", "lobby.html", "calibrate.html"):
         app.get(f"/{name}", include_in_schema=False)(page(name))
     app.get("/", include_in_schema=False)(page("index.html"))
 

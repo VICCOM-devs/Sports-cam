@@ -1,0 +1,182 @@
+<!doctype html>
+<html lang="sv" data-build="{{BUILD}}">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#0A0C10">
+<title>Sports Cam – Calibrate</title>
+<link rel="stylesheet" href="/css/tokens.css?v={{BUILD}}">
+<link rel="stylesheet" href="/css/app.css?v={{BUILD}}">
+<style>
+  .frame { position: relative; background: #000; border-radius: var(--r-card); overflow: hidden; touch-action: none; }
+  .frame img { display: block; width: 100%; }
+  .frame svg { position: absolute; inset: 0; width: 100%; height: 100%; }
+  .frame .pt { fill: var(--accent); stroke: #000; stroke-width: 1.5; }
+  .frame .pt.active { fill: var(--warn); }
+  .frame .lbl { font: 700 11px var(--font); fill: #fff; paint-order: stroke; stroke: #000; stroke-width: 3px; }
+  .frame .ov { fill: none; stroke: var(--accent); stroke-width: 2; opacity: .85; }
+  .rink { width: 100%; background: var(--surface-1); border-radius: var(--r-card); border: 1px solid var(--stroke); touch-action: manipulation; }
+  .rink .ice { fill: #0f1a24; stroke: var(--stroke); stroke-width: .3; }
+  .rink .line { stroke: var(--text-faint); stroke-width: .25; }
+  .rink .blue { stroke: #3b6fd8; } .rink .red { stroke: #c23b4a; }
+  .rink .lm { fill: var(--surface-3); stroke: var(--text-dim); stroke-width: .25; cursor: pointer; }
+  .rink .lm.done { fill: var(--accent); stroke: var(--accent); }
+  .rink .lm.active { fill: var(--warn); stroke: var(--warn); }
+  .steps { display: grid; gap: var(--s2); }
+  .step { display: flex; gap: var(--s3); align-items: center; padding: var(--s2) var(--s3); border-radius: var(--r-chip); background: var(--surface-1); font-size: var(--small); }
+  .step.active { outline: 2px solid var(--warn); }
+  .step .n { width: 24px; height: 24px; border-radius: 50%; background: var(--surface-3); display: grid; place-items: center; font-weight: 700; font-size: 11px; flex: none; }
+  .step.done .n { background: var(--accent); color: #04131A; }
+  @media (min-width: 900px) { .grid { display: grid; grid-template-columns: 1.4fr 1fr; gap: var(--s4); align-items: start; } }
+</style>
+</head>
+<body>
+<header class="topbar">
+  <a class="btn ghost" style="min-height:40px;padding:0 12px" href="/lobby.html" data-i18n="back"></a>
+  <span class="brand">VICCOM <span>Sports Cam</span></span>
+  <span class="grow"></span>
+  <span class="chip" id="camname"></span>
+</header>
+<main class="wrap wide stack">
+  <div>
+    <h1 data-i18n="cal.title"></h1>
+    <p class="dim" data-i18n="cal.hint"></p>
+  </div>
+  <div class="grid">
+    <div class="stack">
+      <div class="frame" id="frame">
+        <img id="snap" alt="">
+        <svg id="overlay"></svg>
+      </div>
+      <div class="row">
+        <button class="btn" id="refresh" data-i18n="cal.newframe"></button>
+        <button class="btn ghost" id="undo" data-i18n="cal.undo"></button>
+        <span class="grow"></span>
+        <span class="chip" id="result"></span>
+      </div>
+      <p id="err" class="hidden" style="color: var(--danger)"></p>
+    </div>
+    <div class="stack">
+      <svg class="rink" id="rink" viewBox="-32 -17 64 34"></svg>
+      <div class="steps" id="steps"></div>
+      <button class="btn primary block" id="save" disabled data-i18n="cal.save"></button>
+      <button class="btn ghost block" id="clear" data-i18n="cal.clear"></button>
+    </div>
+  </div>
+</main>
+<script type="module">
+import { loadI18n, t, api, lang, session, haptic, toast } from "/js/core.js?v={{BUILD}}";
+await loadI18n();
+const $ = (id) => document.getElementById(id);
+const q = new URLSearchParams(location.search);
+const camId = q.get("cam");
+const token = q.get("t") || session()?.token;
+if (!camId || !token) location.href = "/lobby.html";
+
+const rink = await api("/api/rink");
+const match = await api("/api/match", { token });
+const cam = match.cameras.find((c) => c.id === camId);
+$("camname").textContent = cam?.label || camId;
+
+// recommended order: well spread landmarks first
+const ORDER = ["center", "blue_home_L", "blue_home_R", "blue_away_L", "blue_away_R", "dot_home_L", "dot_home_R", "dot_away_L", "dot_away_R", "goal_home_L", "goal_home_R", "goal_away_L", "goal_away_R", "center_L", "center_R", "ndot_home_L", "ndot_home_R", "ndot_away_L", "ndot_away_R", "post_home_L", "post_home_R", "post_away_L", "post_away_R"];
+const lms = Object.fromEntries(rink.landmarks.map((l) => [l.id, l]));
+const name = (id) => lang === "sv" ? lms[id].name_sv : lms[id].name_en;
+let pairs = {};          // id -> {px, py} in image pixels
+let active = ORDER[0];
+
+// ---- rink drawing
+const rinkSvg = $("rink");
+function drawRink() {
+  const o = rink.outline.map(([x, y]) => `${x},${-y}`).join(" ");
+  let s = `<polygon class="ice" points="${o}"/>`;
+  for (const [[x1, y1], [x2, y2]] of rink.lines) {
+    const cls = Math.abs(x1) < 1 ? "red" : Math.abs(x1) < 10 ? "blue" : "red";
+    s += `<line class="line ${cls}" x1="${x1}" y1="${-y1}" x2="${x2}" y2="${-y2}"/>`;
+  }
+  for (const id of ORDER) {
+    const l = lms[id]; if (!l) continue;
+    const cls = pairs[id] ? "done" : id === active ? "active" : "";
+    s += `<circle class="lm ${cls}" data-id="${id}" cx="${l.x}" cy="${-l.y}" r="1.1"><title>${name(id)}</title></circle>`;
+  }
+  rinkSvg.innerHTML = s;
+  rinkSvg.querySelectorAll(".lm").forEach((c) => (c.onclick = () => { active = c.dataset.id; haptic(); render(); }));
+}
+
+// ---- steps list
+function drawSteps() {
+  const el = $("steps"); el.innerHTML = "";
+  const show = ORDER.filter((id) => lms[id]).slice(0, 8);
+  show.forEach((id, i) => {
+    const d = document.createElement("div");
+    d.className = "step" + (pairs[id] ? " done" : "") + (id === active ? " active" : "");
+    d.innerHTML = `<span class="n">${pairs[id] ? "✓" : i + 1}</span><span class="grow"></span>`;
+    d.querySelector(".grow").textContent = name(id);
+    d.onclick = () => { active = id; haptic(); render(); };
+    el.appendChild(d);
+  });
+}
+
+// ---- image + points
+const snap = $("snap"), ov = $("overlay");
+let overlay = null;
+function drawOverlay() {
+  const W = snap.naturalWidth || 1280, H = snap.naturalHeight || 720;
+  ov.setAttribute("viewBox", `0 0 ${W} ${H}`);
+  let s = "";
+  if (overlay) {
+    s += `<polygon class="ov" points="${overlay.outline.map(([x, y]) => `${x},${y}`).join(" ")}"/>`;
+    for (const [[x1, y1], [x2, y2]] of overlay.lines) s += `<line class="ov" x1="${x1}" y1="${y1}" x2="${x2}" y2="${y2}"/>`;
+  }
+  for (const [id, p] of Object.entries(pairs)) {
+    s += `<circle class="pt ${id === active ? "active" : ""}" cx="${p.px}" cy="${p.py}" r="${W / 120}"/><text class="lbl" x="${p.px + W / 100}" y="${p.py - W / 150}">${name(id)}</text>`;
+  }
+  ov.innerHTML = s;
+}
+$("frame").addEventListener("pointerdown", (e) => {
+  const r = snap.getBoundingClientRect();
+  const px = (e.clientX - r.left) / r.width * snap.naturalWidth;
+  const py = (e.clientY - r.top) / r.height * snap.naturalHeight;
+  if (px < 0 || py < 0 || px > snap.naturalWidth || py > snap.naturalHeight) return;
+  pairs[active] = { px, py };
+  haptic("medium");
+  const next = ORDER.find((id) => lms[id] && !pairs[id]);
+  if (next) active = next;
+  render();
+});
+function render() {
+  drawRink(); drawSteps(); drawOverlay();
+  const n = Object.keys(pairs).length;
+  $("save").disabled = n < 4;
+  $("result").textContent = `${n} / 4+`;
+}
+async function loadSnapshot() {
+  snap.src = `/api/cameras/${camId}/snapshot.jpg?t=${encodeURIComponent(token)}&_=${Date.now()}`;
+  await new Promise((res) => { snap.onload = res; snap.onerror = res; });
+  drawOverlay();
+}
+$("refresh").onclick = loadSnapshot;
+$("undo").onclick = () => { const ids = Object.keys(pairs); if (ids.length) { delete pairs[ids.at(-1)]; active = ids.at(-1); render(); } };
+$("clear").onclick = async () => { pairs = {}; overlay = null; active = ORDER[0]; await api(`/api/cameras/${camId}/calibration`, { method: "DELETE", token }).catch(() => {}); render(); };
+$("save").onclick = async () => {
+  haptic("medium"); $("err").classList.add("hidden");
+  try {
+    const body = { template: rink.id, pairs: Object.entries(pairs).map(([id, p]) => ({ id, ...p })) };
+    const r = await api(`/api/cameras/${camId}/calibration`, { method: "POST", token, body });
+    overlay = r.overlay; drawOverlay();
+    const err = r.rms_error_m;
+    $("result").textContent = `± ${err.toFixed(2)} m`;
+    $("result").className = "chip " + (err < 1 ? "ok" : "warn");
+    toast(err < 1 ? t("cal.good") : t("cal.rough"));
+  } catch (e) { $("err").textContent = e.message || t("err.generic"); $("err").classList.remove("hidden"); }
+};
+
+// existing calibration
+const existing = await api(`/api/cameras/${camId}/calibration`, { token }).catch(() => null);
+if (existing) { for (const p of existing.pairs) pairs[p.id] = { px: p.px, py: p.py }; }
+await loadSnapshot();
+render();
+if (existing) $("save").click();
+</script>
+</body>
+</html>

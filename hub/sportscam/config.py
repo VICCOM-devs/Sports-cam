@@ -43,6 +43,10 @@ class Config:
         "SPORTSCAM_UPDATE_URL", "https://viccom.se/updates/sports-cam.json"
     )
     record: bool = os.environ.get("SPORTSCAM_RECORD", "1") != "0"
+    vision: bool = os.environ.get("SPORTSCAM_VISION", "1") != "0"
+    vision_model: str = os.environ.get("SPORTSCAM_MODEL", "nano")      # nano | s
+    vision_fps: float = float(os.environ.get("SPORTSCAM_VISION_FPS", "5"))
+    models_dir_override: str = os.environ.get("SPORTSCAM_MODELS", "")
 
     @property
     def db_path(self) -> Path:
@@ -59,6 +63,10 @@ class Config:
     @property
     def bin_dir(self) -> Path:
         return self.data_dir / "bin"
+
+    @property
+    def models_dir(self) -> Path:
+        return Path(self.models_dir_override) if self.models_dir_override else self.data_dir / "models"
 
     def ensure_dirs(self) -> None:
         for d in (self.data_dir, self.recordings_dir, self.certs_dir, self.bin_dir):

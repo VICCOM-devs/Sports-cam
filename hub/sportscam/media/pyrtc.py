@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import time
 import uuid
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -149,6 +150,31 @@ class PyRtcEngine(MediaEngine):
             )
         return out
 
+    # -- frame tap -----------------------------------------------------------
+    async def frames(self, path: str, fps: float = 5.0):
+        pub = self._pubs.get(path)
+        if not pub:
+            return
+        try:
+            await asyncio.wait_for(pub.ready.wait(), timeout=5)
+        except asyncio.TimeoutError:
+            return
+        track = pub.relay.subscribe(pub.tracks["video"])
+        min_dt = 1.0 / fps
+        last = 0.0
+        try:
+            while self._pubs.get(path) is pub:
+                frame = await track.recv()
+                now = time.time()
+                if now - last < min_dt:
+                    continue
+                last = now
+                yield now, frame.to_ndarray(format="bgr24")
+        except Exception:
+            return
+        finally:
+            track.stop()
+
     # -- recording -----------------------------------------------------------
     async def start_recording(self, path: str, file: Path) -> None:
         pub = self._pubs.get(path)
@@ -169,4 +195,7 @@ class PyRtcEngine(MediaEngine):
         pub = self._pubs.get(path)
         if pub and pub.recorder:
             rec, pub.recorder = pub.recorder, None
-            await rec.stop()
+            try:
+                await rec.stop()
+            except Exception as e:  # PyAV can refuse the final flush; the file is still playable
+                log.warning("recorder stop for %s: %s", path, e)
