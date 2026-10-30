@@ -235,6 +235,16 @@ class MediaMtxEngine(MediaEngine):
             stop = True
             await fut
 
+    async def add_source(self, path: str, url: str) -> None:
+        body = {"source": url, "sourceOnDemand": False, "rtspTransport": "tcp"}
+        r = await self._client.post(f"{self.api}/v3/config/paths/add/{path}", json=body)
+        if r.status_code == 400 and "already" in r.text:
+            r = await self._client.patch(f"{self.api}/v3/config/paths/patch/{path}", json=body)
+        r.raise_for_status()
+
+    async def remove_source(self, path: str) -> None:
+        await self._client.delete(f"{self.api}/v3/config/paths/delete/{path}")
+
     async def _set_record(self, path: str, on: bool) -> None:
         body = {"record": on}
         r = await self._client.patch(f"{self.api}/v3/config/paths/patch/{path}", json=body)

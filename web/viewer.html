@@ -11,6 +11,9 @@
   .player { position: relative; background: #000; aspect-ratio: 16 / 9; overflow: hidden; }
   .player video { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: contain; opacity: 0; transition: opacity var(--t-base) var(--ease); }
   .player video.on { opacity: 1; }
+  .player video { transform-origin: 0 0; transition: opacity var(--t-base) var(--ease), transform 400ms linear; }
+  .player .zoom { position: absolute; right: var(--s3); bottom: var(--s3); min-height: 36px; padding: 0 12px; font-size: 12px; }
+  .player .zoom.on { border-color: var(--accent); background: var(--accent-soft); color: var(--accent); }
   .player .empty { position: absolute; inset: 0; display: grid; place-items: center; text-align: center; padding: var(--s5); color: var(--text-dim); }
   .player .badge { position: absolute; top: var(--s3); left: var(--s3); }
   .player .angle-name { position: absolute; top: var(--s3); right: var(--s3); font-size: var(--small); font-weight: 700; background: rgba(10,12,16,.7); padding: 4px 10px; border-radius: 999px; }
@@ -97,7 +100,7 @@
         <p class="dim" style="font-size: var(--small)" data-i18n="roster.hint"></p>
         <div id="roster" class="stack" style="gap: var(--s2)"></div>
         <form id="rosterform" class="stack" style="gap: var(--s2)">
-          <div class="row"><select id="r-team" class="input grow"></select><input id="r-num" class="input" style="width: 84px; flex: none" maxlength="4" data-i18n-ph="roster.number"></div>
+          <div class="row"><select id="r-team" class="input grow"><option value="home" id="r-home"></option><option value="away" id="r-away"></option></select><input id="r-num" class="input" style="width: 84px; flex: none" maxlength="4" data-i18n-ph="roster.number"></div>
           <div class="row"><input id="r-name" class="input grow" maxlength="40" required data-i18n-ph="roster.name"><button class="btn primary" style="flex: none" data-i18n="roster.add"></button></div>
         </form>
       </div>
@@ -110,6 +113,7 @@
       <div class="empty" id="empty"><div class="stack" style="gap: var(--s2)"><div class="skeleton" style="width:120px;height:14px;margin:0 auto"></div><p data-i18n="view.waiting"></p></div></div>
       <span class="chip live badge" id="livebadge" data-i18n="view.live"></span>
       <span class="angle-name" id="anglename"></span>
+      <button class="btn zoom on" id="zoom" data-i18n="view.zoom"></button>
       <div class="overlay-score" id="oscore"><span class="swatch" id="o-hs"></span><span id="o-h">0</span><span class="faint">–</span><span id="o-a">0</span><span class="swatch" id="o-as"></span><span class="faint" id="o-clock">00:00</span></div>
     </div>
 
@@ -176,6 +180,7 @@ function applyState(st) {
   for (const id of ["as", "o-as"]) $(id).style.background = st.away_color;
   $("home").textContent = st.home; $("away").textContent = st.away;
   $("plus-h-name").textContent = st.home; $("plus-a-name").textContent = st.away;
+  $("r-home").textContent = st.home; $("r-away").textContent = st.away;
   $("score-h").textContent = $("o-h").textContent = st.home_score;
   $("score-a").textContent = $("o-a").textContent = st.away_score;
   $("period").textContent = st.period;
@@ -199,7 +204,16 @@ setInterval(() => {
 
 // ---------- angles & player ----------
 const videos = [$("v0"), $("v1")]; let front = 0; let current = null, conn = null, switching = false;
-let autoDirector = true, directorCam = null;
+let autoDirector = true, directorCam = null, followCam = true, crops = {};
+function applyCrop() {
+  const v = videos[front];
+  const c = followCam && current ? crops[current] : null;
+  if (!c || c[2] >= 0.98) { v.style.transform = ""; return; }
+  // the video is object-fit: contain inside a 16:9 box; crop is normalized to the frame
+  const s = 1 / c[2];
+  v.style.transform = `scale(${s}) translate(${-c[0] * 100}%, ${-c[1] * 100}%)`;
+}
+$("zoom").onclick = (e) => { e.stopPropagation(); haptic(); followCam = !followCam; $("zoom").classList.toggle("on", followCam); applyCrop(); };
 function renderAngles(cams) {
   const wrap = $("angles");
   const liveCams = cams.filter((c) => c.status !== "offline");
@@ -236,8 +250,9 @@ async function switchTo(cam) {
   try {
     const next = await play(cam.id, back, sess.token);
     await new Promise((res) => { back.onplaying = res; setTimeout(res, 1500); });
-    back.classList.add("on"); videos[front].classList.remove("on");
+    back.classList.add("on"); videos[front].classList.remove("on"); videos[front].style.transform = "";
     const old = conn; conn = next; front = 1 - front; current = cam.id;
+    applyCrop();
     setTimeout(() => old?.stop(), 300);
     $("anglename").textContent = cam.label;
     $("empty").classList.add("hidden");
@@ -328,6 +343,7 @@ function applyPositions(data) {
     directorCam = data.director;
     if (autoDirector) { const c = state?.cameras.find((x) => x.id === directorCam && x.live); if (c) switchTo(c); }
   }
+  crops = data.crops || {}; applyCrop();
   if (!dotsLayer) return;
   const seen = new Set();
   for (const p of data.players) {
@@ -376,9 +392,6 @@ async function refreshRoster() {
   if (!canScore) return;
   $("rosterbox").classList.remove("hidden");
   try { roster = await api("/api/roster", { token: sess.token }); } catch { return; }
-  const sel = $("r-team");
-  if (!sel.options.length) { for (const k of ["home", "away"]) { const o = document.createElement("option"); o.value = k; sel.appendChild(o); } }
-  sel.options[0].textContent = state.home; sel.options[1].textContent = state.away;
   const list = $("roster"); list.innerHTML = "";
   for (const r of roster) {
     const el = document.createElement("div"); el.className = "rrow" + (r.opted_out ? " out" : "");
@@ -449,6 +462,7 @@ connectLive(sess.token, {
   onPositions: applyPositions,
   onStatus: (s) => $("net").classList.toggle("hidden", s === "online"),
 });
+document.body.dataset.ready = "1";
 </script>
 </body>
 </html>

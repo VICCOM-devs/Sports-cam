@@ -177,6 +177,7 @@ if (existing) { for (const p of existing.pairs) pairs[p.id] = { px: p.px, py: p.
 await loadSnapshot();
 render();
 if (existing) $("save").click();
+document.body.dataset.ready = "1";
 </script>
 </body>
 </html>

@@ -4,8 +4,10 @@ Multi-phone sports camera system for small clubs. Parents' phones film from arou
 laptop at the rink is the hub, anyone with the match code watches live from any angle. Ice hockey
 first. Spec: *Phase 1 Spec – Multi-Phone Sports Camera System* (Claude Doc in the project).
 
-**This is milestone M1:** capture + QR join + multi-angle live viewing + score/clock + tags +
-recording. No tracking yet (M2+).
+**Built so far (M1–M3 parts):** capture + QR join + multi-angle live viewing + score/clock + tags +
+recording; player detection, tracking, rink calibration, team colours, multi-camera fusion, live
+rink map and skating stats; auto director, follow-cam crop, highlight clips, roster with opt-out,
+external camera sources (the rink's RTSP camera, a capture card, or a file).
 
 ## Run the hub (Windows)
 
@@ -45,6 +47,17 @@ web/                index (join) · camera · viewer · lobby  — vanilla ES mo
 tests/              pytest API tests + Playwright end-to-end (fake camera → viewer frames)
 docs/updates/       sports-cam.json → copy to VICCOM_Site/updates/
 ```
+
+## Vision
+
+- Detector: YOLOX (Apache-2.0) via ONNX Runtime; `nano` (CPU, ~20–40 ms/frame) or `s`
+  (`SPORTSCAM_MODEL=s`, for a GPU hub). Downloaded from the YOLOX GitHub release on first use and
+  SHA-256 verified. `SPORTSCAM_MODELS` points at a folder with the .onnx files to skip downloads.
+- Calibration: `lobby → camera card → Kalibrera`. Tap ≥4 landmarks on the rink drawing and the
+  same spots in the frame; the overlay shows the fitted rink lines and the RMS error in metres.
+- Live: `/api/positions`, WebSocket `positions` messages (players, director camera, crops).
+  Post-game: `recordings/<code>/tracking.json` (paths + stats), `clips/` (mp4 per tag).
+- `SPORTSCAM_VISION=0` turns it off; `SPORTSCAM_VISION_FPS` (default 5).
 
 ## Tests
 

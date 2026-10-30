@@ -39,6 +39,8 @@ class CameraWorker:
     last_frame_t: float = 0.0
     fps_measured: float = 0.0
     detections: int = 0
+    frame_size: tuple[int, int] = (0, 0)
+    crop: list[float] | None = None     # normalized [x, y, w, h] around the play, smoothed
 
 
 @dataclass
@@ -55,6 +57,27 @@ class MatchVision:
     director_cam: str | None = None
     director_since: float = 0.0
     director_log: list[tuple[float, str]] = field(default_factory=list)   # (wall, cam_id)
+
+
+def _follow_crop(prev: list[float] | None, tracks, W: int, H: int, min_w: float = 0.45, margin: float = 0.12,
+                 alpha: float = 0.15) -> list[float] | None:
+    """Virtual follow-cam: a 16:9 window around the tracked players, never smaller than min_w of
+    the frame, eased towards the target so the zoom glides instead of jumping."""
+    if not tracks or not W or not H:
+        return None if prev is None else prev
+    xs1 = min(t.box[0] for t in tracks) / W; ys1 = min(t.box[1] for t in tracks) / H
+    xs2 = max(t.box[2] for t in tracks) / W; ys2 = max(t.box[3] for t in tracks) / H
+    cx, cy = (xs1 + xs2) / 2, (ys1 + ys2) / 2
+    w = max(min_w, (xs2 - xs1) + 2 * margin)
+    h = max(min_w, (ys2 - ys1) + 2 * margin)
+    w = max(w, h)          # keep the frame's aspect (both normalized → same ratio as the frame)
+    h = w
+    w = min(w, 1.0); h = min(h, 1.0)
+    x = min(max(cx - w / 2, 0.0), 1.0 - w); y = min(max(cy - h / 2, 0.0), 1.0 - h)
+    target = [x, y, w, h]
+    if prev is None:
+        return target
+    return [p + alpha * (t - p) for p, t in zip(prev, target)]
 
 
 class VisionService:
@@ -253,6 +276,8 @@ class VisionService:
                         obs.append(Observation(w.cam_id, tr.id, x, y, tr.team, t))
                 w.last_obs = obs
                 w.last_frame_t = t
+                w.frame_size = (frame.shape[1], frame.shape[0])
+                w.crop = _follow_crop(w.crop, tracks, frame.shape[1], frame.shape[0])
                 n += 1
                 if n % 25 == 0:
                     w.fps_measured = 25 / (time.time() - t0); t0 = time.time()
@@ -275,6 +300,8 @@ class VisionService:
                 self._pick_director(mv, now)
                 if self.bus.count(mv.match_id):
                     await self.bus.publish(mv.match_id, "positions",
-                                           {"t": now, "players": mv.fusion.snapshot(), "director": mv.director_cam})
+                                           {"t": now, "players": mv.fusion.snapshot(), "director": mv.director_cam,
+                                            "crops": {cid: [round(v, 3) for v in w.crop] for cid, w in mv.workers.items()
+                                                      if w.crop and now - w.last_frame_t < 2}})
         except asyncio.CancelledError:
             pass

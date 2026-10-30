@@ -14,11 +14,75 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 from aiortc import RTCPeerConnection, RTCSessionDescription
-from aiortc.contrib.media import MediaRecorder, MediaRelay
+from aiortc.contrib.media import MediaPlayer, MediaRelay
 
 from .base import MediaEngine, StreamInfo
 
 log = logging.getLogger("sportscam.media.pyrtc")
+
+
+class FfmpegRecorder:
+    """Pipe decoded frames to an ffmpeg child process (x264 veryfast, Matroska). Robust: the file
+    grows as frames arrive and stays playable even if the hub dies. Video only for now."""
+
+    def __init__(self, track, file: Path, fps: int = 15):
+        self.track = track
+        self.file = file
+        self.fps = fps
+        self.proc: asyncio.subprocess.Process | None = None
+        self.task: asyncio.Task | None = None
+        self.frames = 0
+
+    async def start(self) -> None:
+        self.file.parent.mkdir(parents=True, exist_ok=True)
+        self.task = asyncio.create_task(self._run())
+
+    async def _run(self) -> None:
+        import numpy as np  # noqa: F401  (frames come as ndarray)
+
+        try:
+            frame = await self.track.recv()
+        except Exception:
+            return
+        w, h = frame.width, frame.height
+        cmd = ["ffmpeg", "-y", "-loglevel", "error", "-f", "rawvideo", "-pix_fmt", "yuv420p", "-s", f"{w}x{h}",
+               "-r", str(self.fps), "-i", "pipe:0", "-c:v", "libx264", "-preset", "veryfast", "-crf", "23",
+               "-pix_fmt", "yuv420p", "-g", str(self.fps * 2), str(self.file)]
+        self.proc = await asyncio.create_subprocess_exec(*cmd, stdin=asyncio.subprocess.PIPE,
+                                                         stdout=asyncio.subprocess.DEVNULL, stderr=asyncio.subprocess.DEVNULL)
+        last_pts = None
+        try:
+            while True:
+                if frame.width != w or frame.height != h:
+                    frame = frame.reformat(width=w, height=h)
+                data = frame.to_ndarray(format="yuv420p").tobytes()
+                # constant frame rate: repeat frames if the camera is slower than fps, drop if faster
+                t = frame.time if frame.time is not None else self.frames / self.fps
+                if last_pts is None or t - last_pts >= 1 / self.fps * 0.5:
+                    self.proc.stdin.write(data)
+                    await self.proc.stdin.drain()
+                    self.frames += 1
+                    last_pts = t
+                frame = await self.track.recv()
+        except (asyncio.CancelledError, Exception):
+            pass
+        finally:
+            if self.proc and self.proc.stdin and not self.proc.stdin.is_closing():
+                self.proc.stdin.close()
+
+    async def stop(self) -> None:
+        self.track.stop()
+        if self.task:
+            self.task.cancel()
+            try:
+                await self.task
+            except Exception:
+                pass
+        if self.proc:
+            try:
+                await asyncio.wait_for(self.proc.wait(), timeout=10)
+            except asyncio.TimeoutError:
+                self.proc.kill()
 
 
 @dataclass
@@ -28,9 +92,10 @@ class _Publisher:
     session_id: str
     tracks: dict[str, object] = field(default_factory=dict)   # kind -> MediaStreamTrack
     relay: MediaRelay = field(default_factory=MediaRelay)
-    recorder: MediaRecorder | None = None
+    recorder: FfmpegRecorder | None = None
     record_file: Path | None = None
     ready: asyncio.Event = field(default_factory=asyncio.Event)
+    player: MediaPlayer | None = None     # set for external sources
 
 
 @dataclass
@@ -102,7 +167,37 @@ class PyRtcEngine(MediaEngine):
             except Exception:
                 log.exception("recorder stop failed for %s", pub.path)
             pub.recorder = None
+        if pub.player:
+            for tr in (pub.player.video, pub.player.audio):
+                if tr is not None:
+                    tr.stop()
         await pub.pc.close()
+
+    # -- external sources (rink camera over RTSP, capture card, file) ------------
+    async def add_source(self, path: str, url: str) -> None:
+        old = self._pubs.get(path)
+        if old:
+            await self._close_publisher(old)
+        opts = {}
+        if url.startswith("rtsp://"):
+            opts = {"rtsp_transport": "tcp", "stimeout": "5000000"}
+        loop = asyncio.get_running_loop()
+        player = await loop.run_in_executor(None, lambda: MediaPlayer(url, options=opts, loop=url.endswith((".y4m", ".mp4", ".mkv", ".mov"))))
+        if player.video is None:
+            raise ValueError("source has no video")
+        pub = _Publisher(path=path, pc=RTCPeerConnection(), session_id=uuid.uuid4().hex, player=player)
+        pub.tracks["video"] = player.video
+        if player.audio is not None:
+            pub.tracks["audio"] = player.audio
+        pub.ready.set()
+        self._pubs[path] = pub
+        self._pub_by_session[pub.session_id] = pub
+        log.info("external source %s -> %s", url, path)
+
+    async def remove_source(self, path: str) -> None:
+        pub = self._pubs.get(path)
+        if pub and pub.player:
+            await self._close_publisher(pub)
 
     # -- play (WHEP) ---------------------------------------------------------
     async def whep_play(self, path: str, offer_sdp: str) -> tuple[str, str]:
@@ -181,12 +276,7 @@ class PyRtcEngine(MediaEngine):
         if not pub or pub.recorder:
             return
         await asyncio.wait_for(pub.ready.wait(), timeout=5)
-        file.parent.mkdir(parents=True, exist_ok=True)
-        rec = MediaRecorder(str(file))
-        for kind in ("video", "audio"):
-            track = pub.tracks.get(kind)
-            if track is not None:
-                rec.addTrack(pub.relay.subscribe(track))
+        rec = FfmpegRecorder(pub.relay.subscribe(pub.tracks["video"]), file)
         await rec.start()
         pub.recorder, pub.record_file = rec, file
         log.info("recording %s -> %s", path, file)

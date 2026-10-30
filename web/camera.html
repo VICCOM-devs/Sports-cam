@@ -165,6 +165,7 @@ connectLive(sess.token, {
     if (st.status === "ended" && wantLive) { $("stop").click(); toast(t("view.ended")); }
   },
 });
+document.body.dataset.ready = "1";
 </script>
 </body>
 </html>

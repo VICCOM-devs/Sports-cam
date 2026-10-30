@@ -3,7 +3,22 @@
 Read `viccom-studio` first. Spec of record: Claude Doc *Phase 1 Spec – Multi-Phone Sports Camera
 System (Ice Hockey)* in the "Camera Project For Sports" project.
 
-## State (2026-10-30)
+## State (2026-10-30, afternoon)
+
+- **Repo**: `VICCOM-devs/sports-cam`, branch `main`. Everything below is pushed.
+- **M1–M3 built and tested** (12 tests, e2e in a real browser, stable over 6 consecutive runs):
+  capture + QR join + viewer (M1); detection (YOLOX nano, ONNX, Apache-2.0), per-camera tracker,
+  rink calibration page, jersey-colour teams, multi-camera fusion, live rink map, distance/top
+  speed (M2); auto director with hysteresis, follow-cam crop ("Följ spelet"), highlight clips cut
+  by ffmpeg around tags, Clips tab, roster with names/numbers, link dot→player, per-player
+  opt-out, external camera sources (RTSP/file) as extra angles on both engines (M3 parts).
+- **Recording** is now an ffmpeg pipe (video only, x264 veryfast, .mkv) because aiortc's
+  MediaRecorder produced empty files intermittently. Audio recording: TODO (needed for crowd-noise
+  highlights).
+- Not done from the spec: Active Play (cut stoppages), spotlight reel per player, telestration,
+  instant replay scrubbing (viewer shows live only), tournament mode, native camera app.
+
+## Earlier state
 
 - **Version** 0.1.0, build 1, channel alpha. Working name "Sports Cam" (`se.viccom.sportscam`
   reserved as package id). Product name not decided.

@@ -26,7 +26,7 @@
     <p class="dim" data-i18n="join.hint"></p>
   </div>
 
-  <form id="form" class="stack" autocomplete="off">
+  <form id="form" class="stack" autocomplete="off" onsubmit="return false">
     <label class="stack" style="gap: var(--s2)">
       <span class="label" data-i18n="join.code"></span>
       <input id="code" class="input code" maxlength="8" inputmode="latin" autocapitalize="characters" spellcheck="false" required>
@@ -90,6 +90,7 @@ form.addEventListener("submit", async (e) => {
     btns.forEach((b) => (b.disabled = false));
   }
 });
+document.body.dataset.ready = "1";
 </script>
 </body>
 </html>

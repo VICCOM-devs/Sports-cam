@@ -246,6 +246,12 @@ class TeamMapBody(BaseModel):
     B: Literal["home", "away"]
 
 
+class ExternalCamera(BaseModel):
+    label: str = Field(min_length=1, max_length=40)
+    url: str = Field(min_length=4, max_length=500)
+    kind: Literal["rink", "capture"] = "rink"
+
+
 class RosterBody(BaseModel):
     team: Literal["home", "away"]
     number: str | None = Field(default=None, max_length=4)
@@ -422,6 +428,36 @@ def register_routes(app: FastAPI, hub: Hub) -> None:
         })
         await hub.broadcast_state(m["id"])
         return {"camera_id": cam_id, "whip": f"/whip/{cam_id}", "path": stream_path(m, cam_id)}
+
+    @app.post("/api/cameras/external", status_code=201)
+    async def add_external(body: ExternalCamera, request: Request, dep=Depends(auth("admin"))):
+        """The rink's installed camera (RTSP), a capture card (device URL) or a file, as one more angle."""
+        _, m = dep
+        if not is_local(request):
+            raise HTTPException(403, "external sources are added on the hub")
+        cam_id = "x" + uuid.uuid4().hex[:8]
+        now = time.time()
+        try:
+            await hub.media.add_source(stream_path(m, cam_id), body.url)
+        except Exception as e:
+            raise HTTPException(400, f"could not open source: {e}")
+        hub.db.upsert_camera({
+            "id": cam_id, "match_id": m["id"], "label": body.label, "position": body.kind,
+            "kind": body.kind, "status": "live", "joined_at": now, "last_seen": now + 1e9,  # never "offline" by silence
+        })
+        await hub.broadcast_state(m["id"])
+        return {"camera_id": cam_id, "path": stream_path(m, cam_id)}
+
+    @app.delete("/api/cameras/{cam_id}")
+    async def remove_camera(cam_id: str, dep=Depends(auth("admin"))):
+        _, m = dep
+        c = hub.db.camera(cam_id)
+        if not c or c["match_id"] != m["id"]:
+            raise HTTPException(404, "camera not in this match")
+        await hub.media.remove_source(stream_path(m, cam_id))
+        hub.db.update_camera(cam_id, status="offline", last_seen=0)
+        await hub.broadcast_state(m["id"])
+        return Response(status_code=204)
 
     @app.post("/api/cameras/{cam_id}/status")
     async def camera_status(cam_id: str, body: CameraStatus, dep=Depends(auth("camera"))):

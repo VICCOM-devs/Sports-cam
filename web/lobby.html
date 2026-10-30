@@ -76,6 +76,15 @@
         <div class="row"><h2 data-i18n="lobby.cameras"></h2><span class="grow"></span><span class="chip faint" id="viewers"></span></div>
         <p class="dim" id="nocams" data-i18n="lobby.nocams"></p>
         <div class="cams" id="cams"></div>
+        <details>
+          <summary class="dim" style="cursor: pointer" data-i18n="lobby.external"></summary>
+          <form id="extform" class="row" style="margin-top: var(--s3); flex-wrap: wrap">
+            <input id="ext-label" class="input" style="width: 160px" maxlength="40" required data-i18n-ph="lobby.external.label">
+            <input id="ext-url" class="input grow" maxlength="500" required placeholder="rtsp://192.168.1.50:554/stream">
+            <button class="btn" data-i18n="lobby.external.add"></button>
+          </form>
+          <p class="faint" style="font-size: var(--small); margin-top: var(--s2)" data-i18n="lobby.external.hint"></p>
+        </details>
       </div>
 
       <div class="card stack" id="teams">
@@ -183,12 +192,18 @@ $("form").onsubmit = async (e) => {
     show(c);
   } catch { toast(t("err.generic")); }
 };
+$("extform").onsubmit = async (e) => {
+  e.preventDefault(); haptic("medium");
+  try { await api("/api/cameras/external", { method: "POST", token: adminToken, body: { label: $("ext-label").value.trim(), url: $("ext-url").value.trim() } }); $("ext-url").value = ""; toast(t("lobby.external.ok")); }
+  catch (ex) { toast(ex.message || t("err.generic")); }
+};
 $("start").onclick = () => api("/api/match/start", { method: "POST", token: adminToken }).catch(() => toast(t("err.generic")));
 $("end").onclick = () => api("/api/match/end", { method: "POST", token: adminToken }).catch(() => toast(t("err.generic")));
 
 // resume the current match after a reload
 const prev = sessionStorage.getItem("sportscam.created");
 if (prev && adminToken) { try { const c = JSON.parse(prev); const m = hubInfo.matches.find((x) => x.id === c.match.id); if (m && m.status !== "ended") { c.match = m; show(c); } } catch { /* start fresh */ } }
+document.body.dataset.ready = "1";
 </script>
 </body>
 </html>

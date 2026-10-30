@@ -125,5 +125,11 @@
   "roster.unlinked": "ej kopplad",
   "roster.optout": "Avböj spårning",
   "roster.optin": "Spåra igen",
-  "roster.whois": "Vem är prick"
+  "roster.whois": "Vem är prick",
+  "view.zoom": "Följ spelet",
+  "lobby.external": "Lägg till rinkens kamera eller annan källa",
+  "lobby.external.label": "Namn, t.ex. Rinkkamera",
+  "lobby.external.add": "Anslut",
+  "lobby.external.hint": "RTSP/RTMP/HTTP-adress till arenans kamera, eller en capture-enhet. Kameran kalibreras och spåras som en telefon.",
+  "lobby.external.ok": "Källan är ansluten"
 }

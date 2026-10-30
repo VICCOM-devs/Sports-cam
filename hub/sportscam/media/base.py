@@ -37,6 +37,12 @@ class MediaEngine:
     async def start_recording(self, path: str, file: Path) -> None: ...
     async def stop_recording(self, path: str) -> None: ...
 
+    async def add_source(self, path: str, url: str) -> None:
+        """Pull an external source (RTSP/RTMP/HTTP/file) and publish it under path."""
+        raise NotImplementedError
+
+    async def remove_source(self, path: str) -> None: ...
+
     def frames(self, path: str, fps: float = 5.0):
         """Async generator of (wall_time, bgr_ndarray) decoded frames, rate-limited to fps.
         Used by the vision service and for calibration snapshots."""

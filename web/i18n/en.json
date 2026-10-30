@@ -125,5 +125,11 @@
   "roster.unlinked": "not linked",
   "roster.optout": "Opt out of tracking",
   "roster.optin": "Track again",
-  "roster.whois": "Who is dot"
+  "roster.whois": "Who is dot",
+  "view.zoom": "Follow play",
+  "lobby.external": "Add the rink camera or another source",
+  "lobby.external.label": "Name, e.g. Rink camera",
+  "lobby.external.add": "Connect",
+  "lobby.external.hint": "RTSP/RTMP/HTTP address of the arena camera, or a capture device. It is calibrated and tracked like a phone.",
+  "lobby.external.ok": "Source connected"
 }

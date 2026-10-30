@@ -63,7 +63,7 @@ def test_full_match_flow(hub):
                                           "--autoplay-policy=no-user-gesture-required"])
         # --- lobby on the hub PC
         lobby = browser.new_context(viewport={"width": 1280, "height": 860}, locale="sv-SE").new_page()
-        lobby.goto(f"{base}/lobby.html")
+        lobby.goto(f"{base}/lobby.html"); lobby.wait_for_selector("body[data-ready]")
         lobby.fill("#home", "Frölunda HC U13")
         lobby.fill("#away", "Färjestad BK U13")
         lobby.click("#form button")
@@ -76,7 +76,7 @@ def test_full_match_flow(hub):
         cam_ctx = browser.new_context(viewport={"width": 390, "height": 844}, locale="sv-SE",
                                       permissions=["camera", "microphone"])
         cam = cam_ctx.new_page()
-        cam.goto(f"{base}/?c={code}")
+        cam.goto(f"{base}/?c={code}"); cam.wait_for_selector("body[data-ready]")
         cam.click('button[data-role="camera"]')
         cam.wait_for_url("**/camera.html*")
         cam.wait_for_selector("#start")
@@ -87,7 +87,7 @@ def test_full_match_flow(hub):
 
         # --- scorekeeper starts the game (so recording kicks in)
         sk = browser.new_context(viewport={"width": 390, "height": 844}, locale="sv-SE").new_page()
-        sk.goto(f"{base}/?c={code}")
+        sk.goto(f"{base}/?c={code}"); sk.wait_for_selector("body[data-ready]")
         sk.click('button[data-role="scorekeeper"]')
         sk.wait_for_selector("#startgame:not(.hidden)")
         sk.click("#startgame")
@@ -98,7 +98,7 @@ def test_full_match_flow(hub):
 
         # --- parent viewer (WHEP) sees real frames and the goal
         viewer = browser.new_context(viewport={"width": 390, "height": 844}, locale="en-US").new_page()
-        viewer.goto(f"{base}/?c={code}")
+        viewer.goto(f"{base}/?c={code}"); viewer.wait_for_selector("body[data-ready]")
         viewer.click('button[data-role="viewer"]')
         viewer.wait_for_url("**/viewer.html*")
         viewer.wait_for_function(
@@ -117,7 +117,7 @@ def test_full_match_flow(hub):
         # --- calibration page: snapshot loads, tap 5 landmarks, save → overlay drawn
         cal_href = lobby.get_attribute("#cams a.btn", "href")
         cal = browser.new_context(viewport={"width": 1100, "height": 800}, locale="sv-SE").new_page()
-        cal.goto(f"{base}{cal_href}")
+        cal.goto(f"{base}{cal_href}"); cal.wait_for_selector("body[data-ready]")
         cal.wait_for_function("document.getElementById('snap').naturalWidth > 0", timeout=15000)
         box = cal.locator("#snap").bounding_box()
         # synthetic "camera": rink metres → image pixels (a plausible corner view)
@@ -133,6 +133,17 @@ def test_full_match_flow(hub):
         cal.click("#save")
         cal.wait_for_function("document.querySelector('#overlay .ov') !== null", timeout=10000)
         cal.screenshot(path=str(SHOTS / "calibrate.png"))
+
+        # --- the rink's own camera joins as an external source (a file stands in for RTSP here)
+        lobby.click("details summary")
+        lobby.fill("#ext-label", "Rinkkamera"); lobby.fill("#ext-url", str(_fake_video())); lobby.click("#extform button")
+        lobby.wait_for_function("document.querySelectorAll('#cams .cam').length === 2", timeout=10000)
+        viewer.wait_for_function("document.querySelectorAll('.angle:not(.auto):not(.dead)').length === 2", timeout=15000)
+        viewer.wait_for_selector(".angle.auto", timeout=5000)
+        viewer.click(".angle:not(.auto) >> nth=1")
+        viewer.wait_for_function("document.getElementById('anglename').textContent === 'Rinkkamera'", timeout=15000)
+        viewer.click('#tabs [data-pane="live"]')
+        viewer.screenshot(path=str(SHOTS / "viewer-two-angles.png"))
 
         # --- vision: detections happen, players appear on the viewer's rink map
         viewer.click('#tabs [data-pane="rink"]')
