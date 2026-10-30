@@ -149,8 +149,16 @@ def test_full_match_flow(hub):
         lobby.click("#end")
         viewer.wait_for_function("document.querySelector('#livebadge').classList.contains('hidden')", timeout=10000)
         time.sleep(1.5)
-        recs = list((hub["data"] / "recordings" / code).glob("*.mp4"))
+        recs = list((hub["data"] / "recordings" / code).glob("*.mkv"))
         assert recs and recs[0].stat().st_size > 10_000, recs
         tracking = hub["data"] / "recordings" / code / "tracking.json"
         assert tracking.exists() and tracking.stat().st_size > 50
+
+        # --- clips were cut from the tags (goal + highlight) and play in the viewer
+        viewer.click('#tabs [data-pane="clips"]')
+        viewer.wait_for_function("document.querySelectorAll('#clips .clip').length >= 1", timeout=30000)
+        viewer.wait_for_function("[...document.querySelectorAll('#clips video')].some(v => v.readyState >= 1)", timeout=15000)
+        viewer.screenshot(path=str(SHOTS / "viewer-clips.png"))
+        clips = list((hub["data"] / "recordings" / code / "clips").glob("*.mp4"))
+        assert clips and all(c.stat().st_size > 1000 for c in clips)
         browser.close()

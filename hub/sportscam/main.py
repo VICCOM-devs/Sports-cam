@@ -23,6 +23,7 @@ from .db import Database
 from .events import EventBus
 from .media.base import MediaEngine
 from .updates import UpdateChecker
+from .clips import ClipBuilder, RecordingIndex
 from .vision.rink import TEMPLATES, Calibration, calibrate
 from .vision.service import VisionService
 
@@ -47,6 +48,8 @@ class Hub:
                                     model=cfg.vision_model, fps=cfg.vision_fps)
         if not cfg.vision:
             self.vision.enabled = False
+        self.rec_index = RecordingIndex(cfg.recordings_dir)
+        self.clips = ClipBuilder(cfg.recordings_dir, self.rec_index)
 
     # -- helpers
     def public_url(self, secure: bool = False) -> str:
@@ -163,11 +166,25 @@ async def _poll_cameras(hub: Hub) -> None:
 
 async def _record(hub: Hub, m: dict, cam_id: str) -> None:
     stamp = time.strftime("%Y%m%d-%H%M%S")
-    file = hub.cfg.recordings_dir / m["code"] / f"{cam_id}_{stamp}.mp4"
+    # Matroska: written incrementally, so the file stays readable even if the stop is ungraceful
+    file = hub.cfg.recordings_dir / m["code"] / f"{cam_id}_{stamp}.mkv"
     try:
         await hub.media.start_recording(stream_path(m, cam_id), file)
+        hub.rec_index.add(m["code"], cam_id, file, time.time())
     except Exception as e:
         log.warning("could not start recording %s: %s", cam_id, e)
+
+
+def _build_clips(hub: Hub, m: dict) -> None:
+    cams = {c["id"]: c["label"] for c in hub.db.cameras(m["id"])}
+
+    def pick(ev: dict) -> str | None:
+        cam = (ev.get("payload") or {}).get("camera")
+        if cam and cam in cams:
+            return cam
+        return hub.vision.director_at(m["id"], ev["wall"]) or (next(iter(cams)) if cams else None)
+
+    hub.clips.build(m["code"], hub.db.events(m["id"]), pick, cams)
 
 
 # --------------------------------------------------------------------------- models
@@ -331,6 +348,7 @@ def register_routes(app: FastAPI, hub: Hub) -> None:
                             clock_running=0, clock_base_ms=hub.clock_ms(m2))
         for c in hub.db.cameras(m["id"]):
             await hub.media.stop_recording(stream_path(m, c["id"]))
+        _build_clips(hub, m)
         await hub.vision.stop_match(m["id"])
         await hub.broadcast_state(m["id"])
         return hub.match_state(hub.db.match(m["id"]))
@@ -488,6 +506,28 @@ def register_routes(app: FastAPI, hub: Hub) -> None:
         hub.vision.set_team_map(m["id"], mapping)
         await hub.broadcast_state(m["id"])
         return mapping
+
+    # -- clips
+    @app.get("/api/clips")
+    async def list_clips(dep=Depends(auth("viewer"))):
+        _, m = dep
+        items = hub.clips.manifest(m["code"])
+        items = sorted(items, key=lambda c: (-c["score"], c["t_ms"]))
+        return {"building": hub.clips.building(m["code"]), "clips": items}
+
+    @app.post("/api/clips/build", status_code=202)
+    async def build_clips(dep=Depends(auth("scorekeeper"))):
+        _, m = dep
+        _build_clips(hub, m)
+        return {"building": True}
+
+    @app.get("/clips/{file}")
+    async def clip_file(file: str, dep=Depends(auth("viewer"))):
+        _, m = dep
+        path = hub.clips.clips_dir(m["code"]) / Path(file).name
+        if not path.exists():
+            raise HTTPException(404, "no such clip")
+        return FileResponse(path, media_type="video/mp4", headers={"Cache-Control": "private, max-age=3600"})
 
     # -- WHIP / WHEP signalling
     @app.post("/whip/{cam_id}")

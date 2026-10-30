@@ -109,5 +109,11 @@
   "stat.tracked": "Spårad",
   "team.home": "Hemma",
   "team.away": "Borta",
-  "team.ref": "Domare"
+  "team.ref": "Domare",
+  "view.tab.clips": "Klipp",
+  "view.clips.building": "Klipper…",
+  "view.clips.build": "Skapa klipp",
+  "view.clips.empty": "Inga klipp än. Klipp skapas av taggarna när matchen avslutas.",
+  "view.auto": "Auto",
+  "view.auto.hint": "bästa vinkeln"
 }

@@ -52,6 +52,9 @@ class MatchVision:
     samples: dict[str, list[bytes]] = field(default_factory=lambda: {"A": [], "B": []})
     tick_task: asyncio.Task | None = None
     started: float = field(default_factory=time.time)
+    director_cam: str | None = None
+    director_since: float = 0.0
+    director_log: list[tuple[float, str]] = field(default_factory=list)   # (wall, cam_id)
 
 
 class VisionService:
@@ -124,6 +127,7 @@ class VisionService:
         if mv.tick_task:
             mv.tick_task.cancel()
         summary = {"code": mv.code, "players": mv.fusion.stats(), "teams": mv.teams.to_dict(),
+                   "director_log": mv.director_log,
                    "cameras": {cid: {"detections": w.detections, "calibrated": w.calibration is not None}
                                for cid, w in mv.workers.items()}}
         out = self.recordings_dir / mv.code / "tracking.json"
@@ -145,6 +149,55 @@ class VisionService:
             "teams_ready": mv.teams.centers is not None,
             "team_map": mv.teams.mapping,
         }
+
+    def director(self, match_id: str) -> str | None:
+        mv = self.matches.get(match_id)
+        return mv.director_cam if mv else None
+
+    def director_at(self, match_id: str, wall: float) -> str | None:
+        """Camera the director had chosen at a given wall time (for clips)."""
+        mv = self.matches.get(match_id)
+        if not mv:
+            return None
+        pick = None
+        for t, cam in mv.director_log:
+            if t <= wall:
+                pick = cam
+            else:
+                break
+        return pick
+
+    def _pick_director(self, mv: MatchVision, now: float, min_shot_s: float = 4.0) -> None:
+        """Best angle = camera that sees the most confirmed tracks right now, with hysteresis so
+        the feed doesn't flicker. Calibrated cameras get a bonus when the action centroid is in
+        their view (the fused players tell us where the play is)."""
+        scores: dict[str, float] = {}
+        players = [p for p in mv.fusion.players.values() if p.misses == 0]
+        cx = sum(p.x for p in players) / len(players) if players else None
+        cy = sum(p.y for p in players) / len(players) if players else None
+        for cid, w in mv.workers.items():
+            if now - w.last_frame_t > 2:
+                continue
+            n = len([t for t in w.tracker.tracks if t.confirmed and t.misses == 0])
+            score = float(n)
+            if w.calibration and cx is not None:
+                px, py = w.calibration.rink_to_image(cx, cy)
+                if 0 <= px <= 1920 and 0 <= py <= 1080:
+                    score += 2.0
+            scores[cid] = score
+        if not scores:
+            return
+        best = max(scores, key=scores.get)
+        cur = mv.director_cam
+        if cur is None or cur not in scores:
+            switch = True
+        else:
+            switch = scores[best] > scores[cur] * 1.3 + 0.5 and now - mv.director_since >= min_shot_s
+        if switch and best != cur:
+            mv.director_cam, mv.director_since = best, now
+            mv.director_log.append((now, best))
+            if len(mv.director_log) > 5000:
+                del mv.director_log[:-5000]
 
     def positions(self, match_id: str) -> list[dict]:
         mv = self.matches.get(match_id)
@@ -211,7 +264,9 @@ class VisionService:
                 now = time.time()
                 obs = [o for w in mv.workers.values() if now - w.last_frame_t < 2 for o in w.last_obs]
                 mv.fusion.step(obs, now)
+                self._pick_director(mv, now)
                 if self.bus.count(mv.match_id):
-                    await self.bus.publish(mv.match_id, "positions", {"t": now, "players": mv.fusion.snapshot()})
+                    await self.bus.publish(mv.match_id, "positions",
+                                           {"t": now, "players": mv.fusion.snapshot(), "director": mv.director_cam})
         except asyncio.CancelledError:
             pass

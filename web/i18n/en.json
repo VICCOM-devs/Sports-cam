@@ -109,5 +109,11 @@
   "stat.tracked": "Tracked",
   "team.home": "Home",
   "team.away": "Away",
-  "team.ref": "Referee"
+  "team.ref": "Referee",
+  "view.tab.clips": "Clips",
+  "view.clips.building": "Cutting…",
+  "view.clips.build": "Build clips",
+  "view.clips.empty": "No clips yet. Clips are cut from the tags when the game ends.",
+  "view.auto": "Auto",
+  "view.auto.hint": "best angle"
 }

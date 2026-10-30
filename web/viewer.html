@@ -34,7 +34,7 @@
   .control { padding: 0 var(--s4) var(--s4); display: grid; gap: var(--s2); }
   .control .scorerow { display: grid; grid-template-columns: 1fr 1fr; gap: var(--s2); }
   .tabs { display: flex; gap: var(--s2); padding: var(--s3) var(--s4) 0; }
-  .tabs .btn { min-height: 44px; flex: 1; }
+  .tabs .btn { min-height: 44px; flex: 1; padding: 0 var(--s2); font-size: var(--small); }
   .tabs .btn.on { border-color: var(--accent); background: var(--accent-soft); }
   .pane.hidden { display: none; }
   .rinkmap { width: 100%; background: var(--surface-1); border-radius: var(--r-card); border: 1px solid var(--stroke); }
@@ -45,6 +45,11 @@
   .rinkmap .p.ref { fill: #ddd; }
   .rinkmap .lbl { font: 700 1.6px var(--font); fill: #fff; text-anchor: middle; paint-order: stroke; stroke: #000; stroke-width: .4px; pointer-events: none; }
   .players { display: grid; gap: var(--s2); }
+  .clips { display: grid; gap: var(--s3); }
+  .clip { background: var(--surface-1); border: 1px solid var(--stroke); border-radius: var(--r-card); overflow: hidden; }
+  .clip video { width: 100%; aspect-ratio: 16 / 9; background: #000; display: block; }
+  .clip .meta { display: flex; gap: var(--s2); align-items: center; padding: var(--s2) var(--s3); font-size: var(--small); }
+  .angle.auto .name { color: var(--accent); }
   .prow { display: grid; grid-template-columns: 10px 1fr auto auto; gap: var(--s3); align-items: center; padding: var(--s3) var(--s4); background: var(--surface-1); border: 1px solid var(--stroke); border-radius: var(--r-card); }
   .prow .num { font-weight: 800; font-variant-numeric: tabular-nums; text-align: right; }
   .prow .u { font-size: 11px; color: var(--text-faint); display: block; text-align: right; }
@@ -68,6 +73,12 @@
       <button class="btn on" data-pane="live" data-i18n="view.tab.live"></button>
       <button class="btn" data-pane="rink" data-i18n="view.tab.rink"></button>
       <button class="btn" data-pane="players" data-i18n="view.tab.players"></button>
+      <button class="btn" data-pane="clips" data-i18n="view.tab.clips"></button>
+    </div>
+    <div class="pane hidden" id="pane-clips" style="padding: var(--s3) var(--s4)">
+      <div class="row" style="margin-bottom: var(--s3)"><span class="chip faint hidden" id="clipsbuilding" data-i18n="view.clips.building"></span><span class="grow"></span><button class="btn hidden" id="buildclips" style="min-height:44px" data-i18n="view.clips.build"></button></div>
+      <div class="clips" id="clips"></div>
+      <p class="dim" id="clipsempty" data-i18n="view.clips.empty"></p>
     </div>
 
     <div class="pane hidden" id="pane-rink" style="padding: var(--s3) var(--s4)">
@@ -175,18 +186,28 @@ setInterval(() => {
 
 // ---------- angles & player ----------
 const videos = [$("v0"), $("v1")]; let front = 0; let current = null, conn = null, switching = false;
+let autoDirector = true, directorCam = null;
 function renderAngles(cams) {
   const wrap = $("angles");
   const liveCams = cams.filter((c) => c.status !== "offline");
   wrap.innerHTML = "";
+  if (liveCams.filter((c) => c.live).length > 1) {
+    const a = document.createElement("button");
+    a.className = "angle auto" + (autoDirector ? " on" : "");
+    a.innerHTML = `<span class="name"></span><span class="meta"></span>`;
+    a.querySelector(".name").textContent = t("view.auto");
+    a.querySelector(".meta").textContent = t("view.auto.hint");
+    a.onclick = () => { haptic(); autoDirector = true; renderAngles(state.cameras); if (directorCam) switchTo(state.cameras.find((c) => c.id === directorCam)); };
+    wrap.appendChild(a);
+  }
   for (const c of liveCams) {
     const b = document.createElement("button");
-    b.className = "angle" + (c.id === current ? " on" : "") + (c.live ? "" : " dead");
+    b.className = "angle" + (c.id === current && !autoDirector ? " on" : "") + (c.live ? "" : " dead");
     b.innerHTML = `<span class="name"></span><span class="meta"></span>`;
     b.querySelector(".name").textContent = c.label;
     b.querySelector(".meta").textContent = c.live ? `● ${t("status.live")} · ${c.viewers}` : t(`status.${c.status}`);
     b.disabled = !c.live;
-    b.onclick = () => { haptic(); switchTo(c); };
+    b.onclick = () => { haptic(); autoDirector = false; switchTo(c); renderAngles(state.cameras); };
     wrap.appendChild(b);
   }
   const anyLive = liveCams.some((c) => c.live);
@@ -207,7 +228,7 @@ async function switchTo(cam) {
     setTimeout(() => old?.stop(), 300);
     $("anglename").textContent = cam.label;
     $("empty").classList.add("hidden");
-    document.querySelectorAll(".angle").forEach((b) => b.classList.toggle("on", b.querySelector(".name").textContent === cam.label));
+    document.querySelectorAll(".angle:not(.auto)").forEach((b) => b.classList.toggle("on", !autoDirector && b.querySelector(".name").textContent === cam.label));
     next.pc.onconnectionstatechange = () => { if (["failed", "disconnected"].includes(next.pc.connectionState) && current === cam.id) { toast(t("view.reconnect")); current = null; switchTo(cam); } };
   } catch (e) { toast(t("err.generic")); }
   finally { switching = false; }
@@ -270,6 +291,7 @@ document.querySelectorAll("#tabs .btn").forEach((b) => (b.onclick = () => {
   document.querySelectorAll("#tabs .btn").forEach((x) => x.classList.toggle("on", x === b));
   document.querySelectorAll(".pane").forEach((p) => p.classList.toggle("hidden", p.id !== `pane-${pane}`));
   if (pane === "players") refreshStats();
+  if (pane === "clips") refreshClips();
 }));
 
 // ---------- rink map ----------
@@ -289,6 +311,10 @@ async function drawRinkBase() {
 }
 const dots = new Map();
 function applyPositions(data) {
+  if (data.director && data.director !== directorCam) {
+    directorCam = data.director;
+    if (autoDirector) { const c = state?.cameras.find((x) => x.id === directorCam && x.live); if (c) switchTo(c); }
+  }
   if (!dotsLayer) return;
   const seen = new Set();
   for (const p of data.players) {
@@ -328,7 +354,30 @@ async function refreshStats() {
   } catch { /* keep old */ }
 }
 drawRinkBase();
-setInterval(() => { if (pane === "players") refreshStats(); }, 3000);
+setInterval(() => { if (pane === "players") refreshStats(); if (pane === "clips") refreshClips(); }, 3000);
+
+// ---------- clips ----------
+async function refreshClips() {
+  try {
+    const r = await api("/api/clips", { token: sess.token });
+    $("clipsbuilding").classList.toggle("hidden", !r.building);
+    $("buildclips").classList.toggle("hidden", !canScore || r.building);
+    $("clipsempty").classList.toggle("hidden", r.clips.length > 0 || r.building);
+    const list = $("clips");
+    const have = new Set([...list.querySelectorAll(".clip")].map((e) => e.dataset.id));
+    for (const c of r.clips) {
+      if (have.has(String(c.event_id))) continue;
+      const el = document.createElement("div"); el.className = "clip"; el.dataset.id = c.event_id;
+      el.innerHTML = `<video controls playsinline preload="metadata"></video><div class="meta"><span class="swatch" style="visibility:${c.team ? "visible" : "hidden"};background:var(--${c.team || "home"})"></span><b></b><span class="dim"></span><span class="grow"></span><span class="faint mono"></span></div>`;
+      el.querySelector("video").src = `/clips/${c.file}?t=${encodeURIComponent(sess.token)}`;
+      el.querySelector("b").textContent = t(`view.tag.${c.kind}`);
+      el.querySelector(".dim").textContent = c.camera;
+      el.querySelector(".faint").textContent = fmtClock(c.t_ms);
+      list.appendChild(el);
+    }
+  } catch { /* keep */ }
+}
+$("buildclips").onclick = () => { haptic("medium"); api("/api/clips/build", { method: "POST", token: sess.token }).then(refreshClips).catch(() => toast(t("err.generic"))); };
 
 // ---------- boot ----------
 try {
