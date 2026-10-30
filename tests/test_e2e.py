@@ -143,6 +143,8 @@ def test_full_match_flow(hub):
         viewer.click(".angle:not(.auto) >> nth=1")
         viewer.wait_for_function("document.getElementById('anglename').textContent === 'Rinkkamera'", timeout=15000)
         viewer.click('#tabs [data-pane="live"]')
+        # broadcast overlay: rings under the detected people, a name tag once a roster name is linked
+        viewer.wait_for_function("document.querySelectorAll('#ov ellipse.ring').length >= 1", timeout=20000)
         viewer.screenshot(path=str(SHOTS / "viewer-two-angles.png"))
 
         # --- vision: detections happen, players appear on the viewer's rink map
@@ -165,6 +167,19 @@ def test_full_match_flow(hub):
         sk.wait_for_selector(".rrow.out")
         sk.screenshot(path=str(SHOTS / "scorekeeper-roster.png"))
         assert viewer.evaluate("fetch('/api/roster',{headers:{'X-Token':JSON.parse(localStorage.getItem('sportscam.session')).token}}).then(r=>r.json()).then(j=>j.length)") == 0
+
+        # --- link a named player to a tracked dot → name tag with speed appears in the overlay
+        adm = {"X-Token": lobby.evaluate("sessionStorage.getItem('sportscam.admin')")}
+        rid = httpx.post(f"{base}/api/roster", json={"team": "away", "number": "9", "name": "Noa Berg"}, headers=adm).json()["id"]
+        pid = httpx.get(f"{base}/api/positions", headers=adm).json()["players"][0]["id"]
+        httpx.patch(f"{base}/api/roster/{rid}", json={"player_id": pid}, headers=adm)
+        wide = browser.new_context(viewport={"width": 1100, "height": 700}, locale="sv-SE").new_page()
+        wide.goto(f"{base}/viewer.html?c={code}&t={adm['X-Token']}"); wide.wait_for_selector("body[data-ready]")
+        wide.wait_for_function("document.querySelectorAll('#ov ellipse.ring').length >= 1", timeout=20000)
+        wide.click("#zoom")  # full frame for the screenshot
+        wide.wait_for_function("document.querySelector('#ov .tag') !== null", timeout=20000)
+        time.sleep(0.6)
+        wide.screenshot(path=str(SHOTS / "viewer-overlay.png"))
 
         # --- end match from lobby; recording file exists
         lobby.click("#end")

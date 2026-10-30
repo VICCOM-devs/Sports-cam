@@ -131,5 +131,8 @@
   "lobby.external.label": "Namn, t.ex. Rinkkamera",
   "lobby.external.add": "Anslut",
   "lobby.external.hint": "RTSP/RTMP/HTTP-adress till arenans kamera, eller en capture-enhet. Kameran kalibreras och spåras som en telefon.",
-  "lobby.external.ok": "Källan är ansluten"
+  "lobby.external.ok": "Källan är ansluten",
+  "view.ov.off": "Grafik av",
+  "view.ov.rings": "Ringar",
+  "view.ov.full": "Full grafik"
 }

@@ -131,5 +131,8 @@
   "lobby.external.label": "Name, e.g. Rink camera",
   "lobby.external.add": "Connect",
   "lobby.external.hint": "RTSP/RTMP/HTTP address of the arena camera, or a capture device. It is calibrated and tracked like a phone.",
-  "lobby.external.ok": "Source connected"
+  "lobby.external.ok": "Source connected",
+  "view.ov.off": "Graphics off",
+  "view.ov.rings": "Rings",
+  "view.ov.full": "Full graphics"
 }

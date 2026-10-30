@@ -41,6 +41,7 @@ class CameraWorker:
     detections: int = 0
     frame_size: tuple[int, int] = (0, 0)
     crop: list[float] | None = None     # normalized [x, y, w, h] around the play, smoothed
+    overlay: list[dict] = field(default_factory=list)   # per-track drawing data in image pixels
 
 
 @dataclass
@@ -57,6 +58,29 @@ class MatchVision:
     director_cam: str | None = None
     director_since: float = 0.0
     director_log: list[tuple[float, str]] = field(default_factory=list)   # (wall, cam_id)
+
+
+def _overlay_entries(mv: MatchVision, w: CameraWorker, tracks) -> list[dict]:
+    """What the viewer needs to draw broadcast-style graphics on this camera's picture:
+    box, foot point, team, trail (last foot points), and the fused player's id/label/speed."""
+    by_track = {}
+    for p in mv.fusion.players.values():
+        tid = p.sources.get(w.cam_id)
+        if tid is not None:
+            by_track[tid] = p
+    out = []
+    for tr in tracks:
+        x1, y1, x2, y2 = (round(float(v)) for v in tr.box)
+        fx, fy = tr.foot
+        p = by_track.get(tr.id)
+        if p is not None and p.opted_out:
+            continue
+        e = {"tid": tr.id, "box": [x1, y1, x2, y2], "foot": [round(fx), round(fy)], "team": tr.team,
+             "trail": [[round(a), round(b)] for a, b in tr.history[-12:]]}
+        if p is not None:
+            e.update({"pid": p.id, "label": p.label, "speed": round(p.speed_kmh), "dist": round(p.distance_m)})
+        out.append(e)
+    return out
 
 
 def _follow_crop(prev: list[float] | None, tracks, W: int, H: int, min_w: float = 0.45, margin: float = 0.12,
@@ -277,6 +301,7 @@ class VisionService:
                 w.last_obs = obs
                 w.last_frame_t = t
                 w.frame_size = (frame.shape[1], frame.shape[0])
+                w.overlay = _overlay_entries(mv, w, tracks)
                 w.crop = _follow_crop(w.crop, tracks, frame.shape[1], frame.shape[0])
                 n += 1
                 if n % 25 == 0:
@@ -302,6 +327,8 @@ class VisionService:
                     await self.bus.publish(mv.match_id, "positions",
                                            {"t": now, "players": mv.fusion.snapshot(), "director": mv.director_cam,
                                             "crops": {cid: [round(v, 3) for v in w.crop] for cid, w in mv.workers.items()
-                                                      if w.crop and now - w.last_frame_t < 2}})
+                                                      if w.crop and now - w.last_frame_t < 2},
+                                            "overlay": {cid: {"t": w.last_frame_t, "size": w.frame_size, "tracks": w.overlay}
+                                                        for cid, w in mv.workers.items() if now - w.last_frame_t < 2}})
         except asyncio.CancelledError:
             pass
