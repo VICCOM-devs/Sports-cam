@@ -1,0 +1,13 @@
+{
+  "product": "sports-cam",
+  "platforms": {
+    "desktop": {
+      "min_version_code": 1,
+      "latest_version_code": 1,
+      "force": false,
+      "message_sv": "Ny version av Sports Cam-hubben finns att hämta.",
+      "message_en": "A new version of the Sports Cam hub is available.",
+      "store_url": "https://viccom.se/sports-cam"
+    }
+  }
+}

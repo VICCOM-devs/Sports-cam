@@ -1,0 +1,7 @@
+__pycache__/
+*.pyc
+.venv/
+hub/bin/
+tests/screenshots/
+.pytest_cache/
+*.sqlite

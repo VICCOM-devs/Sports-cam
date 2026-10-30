@@ -1,0 +1,95 @@
+<!doctype html>
+<html lang="sv" data-build="{{BUILD}}">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#0A0C10">
+<title>Sports Cam</title>
+<link rel="manifest" href="/manifest.webmanifest">
+<link rel="stylesheet" href="/css/tokens.css?v={{BUILD}}">
+<link rel="stylesheet" href="/css/app.css?v={{BUILD}}">
+<style>
+  .hero { padding: var(--s7) 0 var(--s5); }
+  .hero h1 { font-size: 32px; }
+  .roles { display: grid; gap: var(--s3); }
+  .role { display: flex; align-items: center; gap: var(--s4); text-align: left; padding: var(--s4); min-height: 72px; }
+  .role .icon { width: 40px; height: 40px; border-radius: 12px; background: var(--accent-soft); display: grid; place-items: center; color: var(--accent); flex: none; }
+  .role small { display: block; color: var(--text-dim); font-weight: 400; }
+  .refer { margin-top: var(--s6); padding-top: var(--s5); border-top: 1px solid var(--stroke); }
+</style>
+</head>
+<body>
+<main class="wrap">
+  <div class="hero stack" style="gap: var(--s2)">
+    <div class="brand">VICCOM <span>Sports Cam</span></div>
+    <h1 data-i18n="join.title"></h1>
+    <p class="dim" data-i18n="join.hint"></p>
+  </div>
+
+  <form id="form" class="stack" autocomplete="off">
+    <label class="stack" style="gap: var(--s2)">
+      <span class="label" data-i18n="join.code"></span>
+      <input id="code" class="input code" maxlength="8" inputmode="latin" autocapitalize="characters" spellcheck="false" required>
+    </label>
+    <p id="err" class="hidden" style="color: var(--danger)"></p>
+
+    <div class="roles">
+      <button type="submit" class="btn primary role" data-role="viewer">
+        <span class="icon">▶</span>
+        <span class="grow"><span data-i18n="join.watch"></span></span>
+      </button>
+      <button type="submit" class="btn role" data-role="camera">
+        <span class="icon">◉</span>
+        <span class="grow"><span data-i18n="join.camera"></span></span>
+      </button>
+      <button type="submit" class="btn role" data-role="scorekeeper">
+        <span class="icon">#</span>
+        <span class="grow"><span data-i18n="join.score"></span></span>
+      </button>
+    </div>
+  </form>
+
+  <section class="refer stack" style="gap: var(--s2)">
+    <p class="dim" data-i18n="join.refer"></p>
+    <a class="btn ghost" href="https://viccom.se" target="_blank" rel="noopener" data-i18n="join.refer.cta"></a>
+  </section>
+</main>
+<script type="module">
+import { loadI18n, t, api, saveSession, codeFromUrl, haptic, updateGate, watchForNewBuild, ApiError } from "/js/core.js?v={{BUILD}}";
+await loadI18n();
+updateGate(); watchForNewBuild();
+
+const code = document.getElementById("code");
+const err = document.getElementById("err");
+const form = document.getElementById("form");
+code.value = codeFromUrl();
+if (!code.value) code.focus();
+
+let role = "viewer";
+form.querySelectorAll("[data-role]").forEach((b) => b.addEventListener("click", () => { role = b.dataset.role; }));
+
+form.addEventListener("submit", async (e) => {
+  e.preventDefault();
+  haptic("medium");
+  err.classList.add("hidden");
+  const btns = form.querySelectorAll("button"); btns.forEach((b) => (b.disabled = true));
+  try {
+    if (role === "camera" && location.protocol !== "https:" && !["localhost", "127.0.0.1"].includes(location.hostname)) {
+      // camera needs a secure origin: hop to the hub's https listener, same code
+      const v = await api("/api/version");
+      location.href = `${v.secure_url}/camera.html?c=${encodeURIComponent(code.value.trim())}`;
+      return;
+    }
+    const j = await api("/api/join", { method: "POST", body: { code: code.value.trim(), role } });
+    saveSession({ token: j.token, role, code: j.match.code, matchId: j.match.id });
+    location.href = role === "camera" ? `/camera.html?c=${j.match.code}` : `/viewer.html?c=${j.match.code}`;
+  } catch (ex) {
+    err.textContent = ex instanceof ApiError && ex.status === 404 ? t("join.notfound")
+      : ex instanceof ApiError && ex.status === 0 ? t("join.offline") : t("err.generic");
+    err.classList.remove("hidden");
+    btns.forEach((b) => (b.disabled = false));
+  }
+});
+</script>
+</body>
+</html>

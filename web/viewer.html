@@ -1,0 +1,248 @@
+<!doctype html>
+<html lang="sv" data-build="{{BUILD}}">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#0A0C10">
+<title>Sports Cam – Live</title>
+<link rel="stylesheet" href="/css/tokens.css?v={{BUILD}}">
+<link rel="stylesheet" href="/css/app.css?v={{BUILD}}">
+<style>
+  .player { position: relative; background: #000; aspect-ratio: 16 / 9; overflow: hidden; }
+  .player video { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: contain; opacity: 0; transition: opacity var(--t-base) var(--ease); }
+  .player video.on { opacity: 1; }
+  .player .empty { position: absolute; inset: 0; display: grid; place-items: center; text-align: center; padding: var(--s5); color: var(--text-dim); }
+  .player .badge { position: absolute; top: var(--s3); left: var(--s3); }
+  .player .angle-name { position: absolute; top: var(--s3); right: var(--s3); font-size: var(--small); font-weight: 700; background: rgba(10,12,16,.7); padding: 4px 10px; border-radius: 999px; }
+  .player .overlay-score { position: absolute; left: var(--s3); bottom: var(--s3); display: flex; align-items: center; gap: var(--s2); background: rgba(10,12,16,.78); backdrop-filter: blur(8px); border-radius: var(--r-chip); padding: 6px 10px; font-weight: 800; font-variant-numeric: tabular-nums; }
+  .angles { display: flex; gap: var(--s2); overflow-x: auto; padding: var(--s3) var(--s4); scroll-snap-type: x mandatory; scrollbar-width: none; }
+  .angles::-webkit-scrollbar { display: none; }
+  .angle { flex: none; scroll-snap-align: start; min-width: 132px; min-height: var(--target); border-radius: var(--r-card); border: 1px solid var(--stroke); background: var(--surface-1); padding: var(--s2) var(--s3); text-align: left; display: grid; gap: 2px; transition: border-color var(--t-fast); }
+  .angle.on { border-color: var(--accent); background: var(--accent-soft); }
+  .angle .name { font-weight: 700; font-size: var(--small); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .angle .meta { font-size: 11px; color: var(--text-dim); }
+  .angle.dead { opacity: .45; }
+  .tags { display: grid; grid-template-columns: repeat(3, 1fr); gap: var(--s2); padding: 0 var(--s4); }
+  .tag { min-height: var(--target); border-radius: var(--r-card); border: 1px solid var(--stroke); background: var(--surface-2); font-weight: 700; display: grid; place-items: center; }
+  .tag.primary { border-color: var(--accent); background: var(--accent-soft); color: var(--accent); }
+  .tag.home { border-color: var(--home); } .tag.away { border-color: var(--away); }
+  .events { padding: var(--s4); display: grid; gap: var(--s2); }
+  .event { display: flex; gap: var(--s3); align-items: center; padding: var(--s3) var(--s4); background: var(--surface-1); border: 1px solid var(--stroke); border-radius: var(--r-card); animation: enter var(--t-base) var(--ease); }
+  @keyframes enter { from { opacity: 0; transform: translateY(6px); } }
+  .event .t { font-variant-numeric: tabular-nums; color: var(--text-dim); font-size: var(--small); min-width: 44px; }
+  .event .k { font-weight: 700; }
+  .control { padding: 0 var(--s4) var(--s4); display: grid; gap: var(--s2); }
+  .control .scorerow { display: grid; grid-template-columns: 1fr 1fr; gap: var(--s2); }
+  @media (min-width: 900px) {
+    .layout { display: grid; grid-template-columns: 1fr 360px; gap: var(--s4); max-width: 1200px; margin: 0 auto; padding: var(--s4); }
+    .side { border-left: 1px solid var(--stroke); }
+  }
+</style>
+</head>
+<body>
+<header class="topbar">
+  <span class="brand">VICCOM <span>Sports Cam</span></span>
+  <span class="grow"></span>
+  <span id="net" class="chip offline hidden" data-i18n="view.offline"></span>
+  <span id="viewers" class="chip faint"></span>
+</header>
+
+<div class="layout">
+  <section class="main">
+    <div class="player" id="player">
+      <video id="v0" autoplay playsinline muted></video>
+      <video id="v1" autoplay playsinline muted></video>
+      <div class="empty" id="empty"><div class="stack" style="gap: var(--s2)"><div class="skeleton" style="width:120px;height:14px;margin:0 auto"></div><p data-i18n="view.waiting"></p></div></div>
+      <span class="chip live badge" id="livebadge" data-i18n="view.live"></span>
+      <span class="angle-name" id="anglename"></span>
+      <div class="overlay-score" id="oscore"><span class="swatch" id="o-hs"></span><span id="o-h">0</span><span class="faint">–</span><span id="o-a">0</span><span class="swatch" id="o-as"></span><span class="faint" id="o-clock">00:00</span></div>
+    </div>
+
+    <div class="angles" id="angles"></div>
+
+    <div class="card scoreboard" style="margin: 0 var(--s4) var(--s3)">
+      <div class="team home"><span class="swatch" id="hs"></span><span class="name" id="home"></span></div>
+      <div class="stack" style="gap: 2px; text-align: center"><div class="score"><span id="score-h">0</span> – <span id="score-a">0</span></div><div class="clock"><span data-i18n="view.period"></span> <span id="period">1</span> · <span id="clock">00:00</span></div></div>
+      <div class="team away"><span class="name" id="away"></span><span class="swatch" id="as"></span></div>
+    </div>
+
+    <div id="control" class="control hidden">
+      <button id="startgame" class="btn primary block" data-i18n="score.start"></button>
+      <div class="scorerow">
+        <button id="clockbtn" class="btn" data-i18n="score.clock.start"></button>
+        <button id="periodbtn" class="btn" data-i18n="score.period"></button>
+      </div>
+      <div class="scorerow">
+        <button id="plus-h" class="btn" style="border-color: var(--home)"><span id="plus-h-name"></span> +1</button>
+        <button id="plus-a" class="btn" style="border-color: var(--away)"><span id="plus-a-name"></span> +1</button>
+      </div>
+    </div>
+
+    <div class="tags" id="tags"></div>
+  </section>
+
+  <aside class="side">
+    <div class="events">
+      <div class="label" data-i18n="view.events"></div>
+      <div id="eventlist" class="stack" style="gap: var(--s2)"><p class="dim" id="noevents" data-i18n="view.noevents"></p></div>
+    </div>
+  </aside>
+</div>
+
+<script type="module">
+import { loadI18n, t, api, session, saveSession, codeFromUrl, haptic, toast, fmtClock, updateGate, watchForNewBuild } from "/js/core.js?v={{BUILD}}";
+import { play } from "/js/rtc.js?v={{BUILD}}";
+import { connectLive } from "/js/live.js?v={{BUILD}}";
+await loadI18n();
+updateGate(); watchForNewBuild();
+
+const $ = (id) => document.getElementById(id);
+const code = codeFromUrl();
+let sess = session();
+const urlTok = new URLSearchParams(location.search).get("t");
+if (urlTok) { sess = { token: urlTok, role: "admin", code }; saveSession(sess); }
+else if (!sess || (code && sess.code !== code) || sess.role === "camera") {
+  try {
+    const j = await api("/api/join", { method: "POST", body: { code, role: "viewer" } });
+    sess = { token: j.token, role: "viewer", code: j.match.code, matchId: j.match.id };
+    saveSession(sess);
+  } catch { location.href = `/?c=${code}`; }
+}
+const canScore = sess.role === "scorekeeper" || sess.role === "admin";
+
+// ---------- state ----------
+let state = null, clockBase = 0, clockAt = 0;
+function applyState(st) {
+  state = st;
+  document.documentElement.style.setProperty("--home", st.home_color);
+  document.documentElement.style.setProperty("--away", st.away_color);
+  for (const id of ["hs", "o-hs"]) $(id).style.background = st.home_color;
+  for (const id of ["as", "o-as"]) $(id).style.background = st.away_color;
+  $("home").textContent = st.home; $("away").textContent = st.away;
+  $("plus-h-name").textContent = st.home; $("plus-a-name").textContent = st.away;
+  $("score-h").textContent = $("o-h").textContent = st.home_score;
+  $("score-a").textContent = $("o-a").textContent = st.away_score;
+  $("period").textContent = st.period;
+  $("viewers").textContent = `${st.viewers} ${t("lobby.viewers")}`;
+  clockBase = st.clock_ms; clockAt = performance.now(); clockRunning = st.clock_running;
+  $("livebadge").classList.toggle("hidden", st.status !== "live");
+  if (canScore) {
+    $("control").classList.remove("hidden");
+    $("startgame").classList.toggle("hidden", st.status !== "lobby");
+    $("clockbtn").textContent = st.clock_running ? t("score.clock.stop") : t("score.clock.start");
+    $("clockbtn").disabled = $("periodbtn").disabled = $("plus-h").disabled = $("plus-a").disabled = st.status !== "live";
+  }
+  renderAngles(st.cameras);
+  if (st.status === "ended") toast(t("view.ended"));
+}
+let clockRunning = false;
+setInterval(() => {
+  const ms = clockBase + (clockRunning ? performance.now() - clockAt : 0);
+  $("clock").textContent = $("o-clock").textContent = fmtClock(ms);
+}, 250);
+
+// ---------- angles & player ----------
+const videos = [$("v0"), $("v1")]; let front = 0; let current = null, conn = null, switching = false;
+function renderAngles(cams) {
+  const wrap = $("angles");
+  const liveCams = cams.filter((c) => c.status !== "offline");
+  wrap.innerHTML = "";
+  for (const c of liveCams) {
+    const b = document.createElement("button");
+    b.className = "angle" + (c.id === current ? " on" : "") + (c.live ? "" : " dead");
+    b.innerHTML = `<span class="name"></span><span class="meta"></span>`;
+    b.querySelector(".name").textContent = c.label;
+    b.querySelector(".meta").textContent = c.live ? `● ${t("status.live")} · ${c.viewers}` : t(`status.${c.status}`);
+    b.disabled = !c.live;
+    b.onclick = () => { haptic(); switchTo(c); };
+    wrap.appendChild(b);
+  }
+  const anyLive = liveCams.some((c) => c.live);
+  $("empty").classList.toggle("hidden", anyLive && !!current);
+  $("empty").querySelector("p").textContent = liveCams.length ? t("view.waiting") : t("view.nocams");
+  if (!current && anyLive) switchTo(liveCams.find((c) => c.live));
+  if (current && !liveCams.some((c) => c.id === current && c.live)) { current = null; conn?.stop(); conn = null; videos.forEach((v) => v.classList.remove("on")); const next = liveCams.find((c) => c.live); if (next) switchTo(next); else $("empty").classList.remove("hidden"); }
+}
+async function switchTo(cam) {
+  if (!cam || cam.id === current || switching) return;
+  switching = true;
+  const back = videos[1 - front];
+  try {
+    const next = await play(cam.id, back, sess.token);
+    await new Promise((res) => { back.onplaying = res; setTimeout(res, 1500); });
+    back.classList.add("on"); videos[front].classList.remove("on");
+    const old = conn; conn = next; front = 1 - front; current = cam.id;
+    setTimeout(() => old?.stop(), 300);
+    $("anglename").textContent = cam.label;
+    $("empty").classList.add("hidden");
+    document.querySelectorAll(".angle").forEach((b) => b.classList.toggle("on", b.querySelector(".name").textContent === cam.label));
+    next.pc.onconnectionstatechange = () => { if (["failed", "disconnected"].includes(next.pc.connectionState) && current === cam.id) { toast(t("view.reconnect")); current = null; switchTo(cam); } };
+  } catch (e) { toast(t("err.generic")); }
+  finally { switching = false; }
+}
+// tap video to unmute (autoplay policy)
+$("player").onclick = () => videos.forEach((v) => (v.muted = false));
+
+// ---------- tags ----------
+const TAGS = canScore ? ["highlight", "goal", "shot", "save", "hit", "penalty"] : ["highlight"];
+const tagsEl = $("tags");
+for (const k of TAGS) {
+  const b = document.createElement("button"); b.className = "tag" + (k === "highlight" ? " primary" : ""); b.textContent = t(`view.tag.${k}`);
+  b.onclick = async () => {
+    haptic("medium"); b.style.transform = "scale(.95)"; setTimeout(() => (b.style.transform = ""), 120);
+    let team = null;
+    if (canScore && ["goal", "shot", "save", "hit", "penalty"].includes(k)) team = await pickTeam();
+    if (team === undefined) return;
+    try { await api("/api/events", { method: "POST", token: sess.token, body: { kind: k, team, payload: { camera: current } } }); toast(`${t("view.tagged")}: ${t(`view.tag.${k}`)}`); }
+    catch { toast(t("err.generic")); }
+  };
+  tagsEl.appendChild(b);
+}
+if (TAGS.length === 1) tagsEl.style.gridTemplateColumns = "1fr";
+function pickTeam() {
+  return new Promise((res) => {
+    const s = document.createElement("div"); s.className = "sheet";
+    s.innerHTML = `<div class="stack"><div class="scorerow" style="display:grid;grid-template-columns:1fr 1fr;gap:12px"><button class="btn" data-t="home" style="border-color:var(--home)"></button><button class="btn" data-t="away" style="border-color:var(--away)"></button></div><button class="btn ghost" data-t=""></button></div>`;
+    s.querySelector('[data-t="home"]').textContent = state.home; s.querySelector('[data-t="away"]').textContent = state.away; s.querySelector('[data-t=""]').textContent = t("close");
+    s.querySelectorAll("button").forEach((b) => (b.onclick = () => { s.remove(); res(b.dataset.t || undefined); }));
+    document.body.appendChild(s);
+  });
+}
+
+// ---------- scorekeeper controls ----------
+if (canScore) {
+  const post = (p, body) => api(p, { method: "POST", token: sess.token, body }).catch(() => toast(t("err.generic")));
+  $("startgame").onclick = () => { haptic("medium"); post("/api/match/start"); };
+  $("clockbtn").onclick = () => { haptic("medium"); post("/api/match/clock", { running: !state.clock_running }); };
+  $("periodbtn").onclick = () => { haptic("medium"); post("/api/match/score", { period: state.period + 1 }); };
+  $("plus-h").onclick = () => { haptic("heavy"); post("/api/match/score", { home_score: state.home_score + 1 }); };
+  $("plus-a").onclick = () => { haptic("heavy"); post("/api/match/score", { away_score: state.away_score + 1 }); };
+}
+
+// ---------- events list ----------
+const list = $("eventlist");
+function addEvent(ev, prepend = true) {
+  $("noevents")?.remove();
+  const el = document.createElement("div"); el.className = "event";
+  const label = ev.kind === "score" ? `${ev.payload.home}–${ev.payload.away}` : ev.kind === "period" ? `${t("view.period")} ${ev.payload.period}` : t(`view.tag.${ev.kind}`);
+  const teamName = ev.team === "home" ? state?.home : ev.team === "away" ? state?.away : "";
+  el.innerHTML = `<span class="t"></span><span class="swatch" style="visibility:${ev.team ? "visible" : "hidden"};background:var(--${ev.team || "home"})"></span><span class="k"></span><span class="dim grow"></span>`;
+  el.querySelector(".t").textContent = fmtClock(ev.t_ms); el.querySelector(".k").textContent = label; el.querySelector(".dim").textContent = teamName || "";
+  prepend ? list.prepend(el) : list.append(el);
+}
+
+// ---------- boot ----------
+try {
+  const full = await api("/api/match", { token: sess.token });
+  if (full.role !== sess.role) { sess.role = full.role; saveSession(sess); location.reload(); }
+  applyState(full);
+  for (const ev of full.events) addEvent(ev, true);
+} catch { toast(t("err.generic")); }
+connectLive(sess.token, {
+  onState: applyState,
+  onEvent: (ev) => addEvent(ev),
+  onStatus: (s) => $("net").classList.toggle("hidden", s === "online"),
+});
+</script>
+</body>
+</html>

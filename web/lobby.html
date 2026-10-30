@@ -1,0 +1,160 @@
+<!doctype html>
+<html lang="sv" data-build="{{BUILD}}">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="theme-color" content="#0A0C10">
+<title>Sports Cam – Hub</title>
+<link rel="stylesheet" href="/css/tokens.css?v={{BUILD}}">
+<link rel="stylesheet" href="/css/app.css?v={{BUILD}}">
+<style>
+  .grid { display: grid; grid-template-columns: 1fr; gap: var(--s4); }
+  @media (min-width: 900px) { .grid { grid-template-columns: 420px 1fr; } }
+  .qr { display: grid; gap: var(--s3); justify-items: center; text-align: center; }
+  .qr img { width: 100%; max-width: 320px; border-radius: var(--r-card); background: #fff; padding: 12px; image-rendering: pixelated; }
+  .bigcode { font-size: 56px; font-weight: 800; letter-spacing: .22em; line-height: 1; }
+  .cams { display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: var(--s3); }
+  .cam { display: grid; gap: var(--s2); }
+  .cam .top { display: flex; justify-content: space-between; align-items: center; gap: var(--s2); }
+  .cam .lbl { font-weight: 700; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .bar { height: 6px; border-radius: 3px; background: var(--surface-3); overflow: hidden; }
+  .bar > i { display: block; height: 100%; background: var(--success); }
+  .bar.low > i { background: var(--warn); }
+  .colors { display: grid; grid-template-columns: 1fr 1fr; gap: var(--s3); }
+  input[type=color] { width: 56px; height: 56px; border: 1px solid var(--stroke); border-radius: var(--r-chip); background: var(--surface-2); padding: 4px; }
+  .tabs { display: flex; gap: var(--s2); }
+  .tabs .btn { min-height: 44px; }
+  .tabs .btn.on { border-color: var(--accent); background: var(--accent-soft); }
+</style>
+</head>
+<body>
+<header class="topbar">
+  <span class="brand">VICCOM <span>Sports Cam</span></span>
+  <span class="chip faint" id="ver"></span>
+  <span class="grow"></span>
+  <span class="chip" id="engine"></span>
+</header>
+
+<main class="wrap wide stack">
+  <section id="new" class="card stack">
+    <h1 data-i18n="lobby.new"></h1>
+    <form id="form" class="stack">
+      <div class="colors">
+        <label class="stack" style="gap: var(--s2)"><span class="label" data-i18n="lobby.home"></span>
+          <div class="row"><input type="color" id="hc" value="#1E6FE8"><input class="input" id="home" required maxlength="40" value="Hemma"></div></label>
+        <label class="stack" style="gap: var(--s2)"><span class="label" data-i18n="lobby.away"></span>
+          <div class="row"><input type="color" id="ac" value="#E53935"><input class="input" id="away" required maxlength="40" value="Borta"></div></label>
+      </div>
+      <button class="btn primary" style="justify-self: start" data-i18n="lobby.create"></button>
+    </form>
+  </section>
+
+  <section id="match" class="grid hidden">
+    <div class="card stack">
+      <div class="tabs"><button class="btn on" id="tab-view" data-i18n="lobby.scan"></button><button class="btn" id="tab-cam" data-i18n="lobby.scancam"></button></div>
+      <div class="qr">
+        <img id="qr" alt="QR">
+        <div class="label" data-i18n="lobby.code"></div>
+        <div class="bigcode" id="code"></div>
+        <div class="dim" id="url" style="font-size: var(--small); word-break: break-all"></div>
+      </div>
+    </div>
+
+    <div class="stack">
+      <div class="card scoreboard">
+        <div class="team home"><span class="swatch" id="hs"></span><span class="name" id="h"></span></div>
+        <div class="stack" style="gap: 2px; text-align: center"><div class="score"><span id="sh">0</span> – <span id="sa">0</span></div><div class="clock"><span id="status"></span> · <span id="clock">00:00</span></div></div>
+        <div class="team away"><span class="name" id="a"></span><span class="swatch" id="as"></span></div>
+      </div>
+
+      <div class="card stack">
+        <div class="row"><h2 data-i18n="lobby.cameras"></h2><span class="grow"></span><span class="chip faint" id="viewers"></span></div>
+        <p class="dim" id="nocams" data-i18n="lobby.nocams"></p>
+        <div class="cams" id="cams"></div>
+      </div>
+
+      <div class="row" style="flex-wrap: wrap">
+        <button class="btn primary" id="start" data-i18n="lobby.start"></button>
+        <button class="btn danger" id="end" data-i18n="lobby.end"></button>
+        <a class="btn ghost" id="admin" target="_blank" data-i18n="lobby.admin"></a>
+      </div>
+      <p class="faint" style="font-size: var(--small)"><span data-i18n="lobby.recordings"></span> <span id="recdir"></span></p>
+    </div>
+  </section>
+</main>
+
+<script type="module">
+import { loadI18n, t, api, haptic, toast, fmtClock, updateGate, watchForNewBuild } from "/js/core.js?v={{BUILD}}";
+import { connectLive } from "/js/live.js?v={{BUILD}}";
+await loadI18n();
+updateGate(); watchForNewBuild();
+const $ = (id) => document.getElementById(id);
+
+const v = await api("/api/version");
+$("ver").textContent = `v${v.semver} (${v.build})`;
+$("engine").textContent = `${t("lobby.engine")}: ${v.media}`;
+const hubInfo = await api("/api/hub");
+$("recdir").textContent = hubInfo.recordings_dir;
+
+let created = null, adminToken = sessionStorage.getItem("sportscam.admin"), live;
+function show(c) {
+  created = c;
+  $("new").classList.add("hidden"); $("match").classList.remove("hidden");
+  $("code").textContent = c.match.code;
+  $("admin").href = `/viewer.html?c=${c.match.code}&t=${encodeURIComponent(adminToken)}`;
+  tab("view");
+  applyState(c.match);
+  live = connectLive(adminToken, { onState: applyState, onEvent: (ev) => { if (ev.kind === "goal") toast(`${t("view.tag.goal")}!`); } });
+}
+function tab(which) {
+  $("tab-view").classList.toggle("on", which === "view"); $("tab-cam").classList.toggle("on", which === "cam");
+  const url = which === "view" ? created.join_url : created.camera_url;
+  $("qr").src = `/api/qr.png?url=${encodeURIComponent(url)}`; $("url").textContent = url;
+}
+$("tab-view").onclick = () => tab("view"); $("tab-cam").onclick = () => tab("cam");
+
+let clockBase = 0, clockAt = 0, running = false;
+function applyState(st) {
+  $("h").textContent = st.home; $("a").textContent = st.away;
+  $("hs").style.background = st.home_color; $("as").style.background = st.away_color;
+  $("sh").textContent = st.home_score; $("sa").textContent = st.away_score;
+  $("status").textContent = st.status === "live" ? t("view.live") : st.status === "ended" ? t("view.ended") : t("lobby.title");
+  $("viewers").textContent = `${st.viewers} ${t("lobby.viewers")}`;
+  clockBase = st.clock_ms; clockAt = performance.now(); running = st.clock_running;
+  $("start").classList.toggle("hidden", st.status !== "lobby"); $("end").classList.toggle("hidden", st.status === "ended");
+  $("nocams").classList.toggle("hidden", st.cameras.length > 0);
+  const wrap = $("cams"); wrap.innerHTML = "";
+  for (const c of st.cameras) {
+    const el = document.createElement("div"); el.className = "card raised cam";
+    const chip = c.live ? "live" : c.status === "offline" ? "offline" : "ok";
+    const bat = c.battery ?? null;
+    el.innerHTML = `<div class="top"><span class="lbl"></span><span class="chip ${chip}"></span></div>
+      <div class="row" style="font-size: var(--small)"><span class="dim grow"></span><span class="faint"></span></div>
+      <div class="bar ${bat !== null && bat < 20 ? "low" : ""}"><i style="width:${bat ?? 0}%"></i></div>`;
+    el.querySelector(".lbl").textContent = c.label;
+    el.querySelector(".chip").textContent = c.live ? t("status.live") : t(`status.${c.status}`);
+    el.querySelector(".dim").textContent = `${c.viewers} ${t("lobby.viewers")}${c.recording ? " · " + t("status.recording") : ""}`;
+    el.querySelector(".faint").textContent = bat !== null ? `${bat}%` : "";
+    wrap.appendChild(el);
+  }
+}
+setInterval(() => { $("clock").textContent = fmtClock(clockBase + (running ? performance.now() - clockAt : 0)); }, 250);
+
+$("form").onsubmit = async (e) => {
+  e.preventDefault(); haptic("medium");
+  try {
+    const c = await api("/api/matches", { method: "POST", body: { home: $("home").value.trim(), away: $("away").value.trim(), home_color: $("hc").value, away_color: $("ac").value } });
+    adminToken = c.admin_token; sessionStorage.setItem("sportscam.admin", adminToken);
+    sessionStorage.setItem("sportscam.created", JSON.stringify(c));
+    show(c);
+  } catch { toast(t("err.generic")); }
+};
+$("start").onclick = () => api("/api/match/start", { method: "POST", token: adminToken }).catch(() => toast(t("err.generic")));
+$("end").onclick = () => api("/api/match/end", { method: "POST", token: adminToken }).catch(() => toast(t("err.generic")));
+
+// resume the current match after a reload
+const prev = sessionStorage.getItem("sportscam.created");
+if (prev && adminToken) { try { const c = JSON.parse(prev); const m = hubInfo.matches.find((x) => x.id === c.match.id); if (m && m.status !== "ended") { c.match = m; show(c); } } catch { /* start fresh */ } }
+</script>
+</body>
+</html>

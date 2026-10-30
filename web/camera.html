@@ -1,0 +1,170 @@
+<!doctype html>
+<html lang="sv" data-build="{{BUILD}}">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no">
+<meta name="theme-color" content="#0A0C10">
+<title>Sports Cam – Camera</title>
+<link rel="stylesheet" href="/css/tokens.css?v={{BUILD}}">
+<link rel="stylesheet" href="/css/app.css?v={{BUILD}}">
+<style>
+  body { overflow: hidden; }
+  .stage { position: fixed; inset: 0; background: #000; }
+  video { width: 100%; height: 100%; object-fit: cover; }
+  .overlay { position: fixed; inset: 0; display: flex; flex-direction: column; justify-content: space-between; padding: calc(var(--s4) + var(--safe-top)) var(--s4) calc(var(--s4) + var(--safe-bottom)); pointer-events: none; }
+  .overlay > * { pointer-events: auto; }
+  .hud { display: flex; gap: var(--s2); align-items: center; flex-wrap: wrap; }
+  .panel { background: rgba(10,12,16,.82); backdrop-filter: blur(12px); border: 1px solid var(--stroke); border-radius: var(--r-sheet); padding: var(--s4); }
+  .positions { display: grid; grid-template-columns: repeat(2, 1fr); gap: var(--s2); }
+  .positions .btn { min-height: 48px; font-size: var(--small); }
+  .positions .btn.on { border-color: var(--accent); background: var(--accent-soft); }
+  .rec { display: inline-flex; align-items: center; gap: 8px; font-weight: 800; letter-spacing: .08em; color: var(--danger); }
+  .rec::before { content: ""; width: 12px; height: 12px; border-radius: 50%; background: var(--danger); animation: pulse 1.2s infinite; }
+  .dimmer { position: fixed; inset: 0; background: #000; opacity: 0; transition: opacity var(--t-slow); pointer-events: none; }
+  .dimmer.on { opacity: .85; pointer-events: auto; }
+</style>
+</head>
+<body>
+<div class="stage"><video id="preview" autoplay muted playsinline></video></div>
+<div class="dimmer" id="dimmer"></div>
+
+<div class="overlay">
+  <div class="hud">
+    <span class="brand">VICCOM <span>Sports Cam</span></span>
+    <span class="grow"></span>
+    <span id="state" class="chip offline"></span>
+    <span id="battery" class="chip hidden"></span>
+    <span id="viewers" class="chip hidden"></span>
+  </div>
+
+  <div id="setup" class="panel stack">
+    <h1 data-i18n="cam.title"></h1>
+    <p class="dim" data-i18n="cam.setup"></p>
+    <p id="insecure" class="hidden" style="color: var(--warn)" data-i18n="cam.insecure"></p>
+    <div>
+      <div class="label" style="margin-bottom: var(--s2)" data-i18n="cam.label"></div>
+      <div class="positions" id="positions"></div>
+    </div>
+    <p id="err" class="hidden" style="color: var(--danger)"></p>
+    <button id="start" class="btn primary block" data-i18n="cam.start"></button>
+  </div>
+
+  <div id="live" class="panel row hidden">
+    <span class="rec" data-i18n="cam.live"></span>
+    <span class="grow dim" style="font-size: var(--small)" data-i18n="cam.keepon"></span>
+    <button id="stop" class="btn danger" style="min-height: 48px" data-i18n="cam.stop"></button>
+  </div>
+</div>
+
+<script type="module">
+import { loadI18n, t, api, session, saveSession, codeFromUrl, haptic, toast, updateGate, ApiError } from "/js/core.js?v={{BUILD}}";
+import { publish } from "/js/rtc.js?v={{BUILD}}";
+import { connectLive } from "/js/live.js?v={{BUILD}}";
+await loadI18n();
+updateGate();
+
+const $ = (id) => document.getElementById(id);
+const code = codeFromUrl();
+let sess = session();
+if (!sess || sess.role !== "camera" || (code && sess.code !== code)) {
+  // joined via the https hop or a fresh scan: get a camera token now
+  try {
+    const j = await api("/api/join", { method: "POST", body: { code, role: "camera" } });
+    sess = { token: j.token, role: "camera", code: j.match.code, matchId: j.match.id };
+    saveSession(sess);
+  } catch { location.href = `/?c=${code}`; }
+}
+if (!window.isSecureContext) $("insecure").classList.remove("hidden");
+
+// positions
+const POS = ["cornerA", "cornerB", "cornerC", "cornerD", "center", "goalHome", "goalAway"];
+let position = localStorage.getItem("sportscam.position") || "cornerA";
+const posEl = $("positions");
+for (const p of POS) {
+  const b = document.createElement("button"); b.className = "btn" + (p === position ? " on" : ""); b.textContent = t(`cam.position.${p}`);
+  b.onclick = () => { position = p; localStorage.setItem("sportscam.position", p); posEl.querySelectorAll(".btn").forEach((x) => x.classList.toggle("on", x === b)); haptic(); };
+  posEl.appendChild(b);
+}
+
+// state chip
+const stateEl = $("state");
+function setState(kind) {
+  stateEl.className = "chip " + (kind === "live" ? "live hidden" : kind === "connecting" ? "warn" : "offline");
+  stateEl.textContent = kind === "live" ? t("cam.live") : kind === "connecting" ? t("cam.connecting") : kind === "reconnecting" ? t("cam.reconnecting") : t("status.joined");
+}
+setState("joined");
+
+// preview as early as possible so the user can aim
+const preview = $("preview");
+let stream;
+async function openCamera() {
+  stream = await navigator.mediaDevices.getUserMedia({
+    video: { facingMode: "environment", width: { ideal: 1280 }, height: { ideal: 720 }, frameRate: { ideal: 30 } },
+    audio: { echoCancellation: false, noiseSuppression: false, autoGainControl: false },
+  });
+  preview.srcObject = stream;
+}
+try { await openCamera(); } catch (e) { $("err").textContent = t("cam.denied"); $("err").classList.remove("hidden"); }
+
+// battery + heartbeat
+let camId;
+async function heartbeat() {
+  if (!camId) return;
+  let battery = null;
+  try { const b = await navigator.getBattery?.(); if (b) { battery = Math.round(b.level * 100); $("battery").textContent = `${t("cam.battery")} ${battery}%`; $("battery").className = "chip " + (battery < 20 ? "warn" : ""); } } catch { /* no API */ }
+  try { await api(`/api/cameras/${camId}/status`, { method: "POST", token: sess.token, body: { battery } }); } catch { /* retry next tick */ }
+}
+setInterval(heartbeat, 5000);
+
+// publish with reconnect
+let pub, wantLive = false;
+async function goLive() {
+  if (!stream) { await openCamera(); }
+  setState("connecting");
+  if (!camId) {
+    const r = await api("/api/cameras", { method: "POST", token: sess.token, body: { label: t(`cam.position.${position}`), position } });
+    camId = r.camera_id;
+  }
+  pub = await publish(camId, stream, sess.token);
+  pub.pc.onconnectionstatechange = () => {
+    const s = pub.pc.connectionState;
+    if (s === "connected") setState("live");
+    if ((s === "failed" || s === "disconnected") && wantLive) { setState("reconnecting"); setTimeout(() => wantLive && goLive().catch(() => {}), 2000); }
+  };
+  heartbeat();
+}
+
+$("start").onclick = async () => {
+  haptic("medium");
+  $("start").disabled = true;
+  try {
+    wantLive = true;
+    await goLive();
+    $("setup").classList.add("hidden"); $("live").classList.remove("hidden");
+    try { await document.documentElement.requestFullscreen?.(); } catch { /* optional */ }
+    if ("wakeLock" in navigator) try { await navigator.wakeLock.request("screen"); } catch { /* optional */ }
+    setTimeout(() => $("dimmer").classList.add("on"), 8000); // save battery: dim after 8 s, tap to undim
+  } catch (e) {
+    wantLive = false; setState("joined");
+    $("err").textContent = e instanceof ApiError && e.status === 0 ? t("join.offline") : e.name === "NotAllowedError" ? t("cam.denied") : t("err.generic");
+    $("err").classList.remove("hidden");
+  } finally { $("start").disabled = false; }
+};
+$("dimmer").onclick = () => { $("dimmer").classList.remove("on"); setTimeout(() => wantLive && $("dimmer").classList.add("on"), 8000); };
+$("stop").onclick = async () => {
+  haptic("medium"); wantLive = false;
+  await pub?.stop(); setState("joined");
+  $("dimmer").classList.remove("on"); $("live").classList.add("hidden"); $("setup").classList.remove("hidden");
+};
+
+// viewers count from the live feed
+connectLive(sess.token, {
+  onState: (st) => {
+    const me = st.cameras.find((c) => c.id === camId);
+    if (me) { $("viewers").textContent = `${me.viewers} ${t("cam.viewers")}`; $("viewers").classList.remove("hidden"); }
+    if (st.status === "ended" && wantLive) { $("stop").click(); toast(t("view.ended")); }
+  },
+});
+</script>
+</body>
+</html>

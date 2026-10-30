@@ -1,0 +1,34 @@
+/* Design tokens – source: design-system/MASTER.md */
+:root {
+  --bg: #0A0C10;
+  --surface-1: #12151B;
+  --surface-2: #1A1E26;
+  --surface-3: #232833;
+  --stroke: #2C323E;
+  --text: #F3F5F8;
+  --text-dim: #A6ADBA;
+  --text-faint: #6B7380;
+  --accent: #3DDCFF;
+  --accent-soft: rgba(61, 220, 255, .14);
+  --accent-deep: #0FA7C8;
+  --success: #3DDC97;
+  --warn: #FFB02E;
+  --danger: #FF4D5E;
+  --home: #1E6FE8;
+  --away: #E53935;
+
+  --font: Inter, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  --display: 40px; --title: 22px; --body: 16px; --label: 12px; --small: 13px;
+
+  --s1: 4px; --s2: 8px; --s3: 12px; --s4: 16px; --s5: 24px; --s6: 32px; --s7: 48px;
+  --r-chip: 10px; --r-card: 16px; --r-sheet: 24px;
+  --target: 56px;
+
+  --t-fast: 120ms; --t-base: 200ms; --t-slow: 320ms;
+  --ease: cubic-bezier(.2, .8, .2, 1);
+  --safe-top: env(safe-area-inset-top, 0px);
+  --safe-bottom: env(safe-area-inset-bottom, 0px);
+}
+@media (prefers-reduced-motion: reduce) {
+  :root { --t-fast: 0ms; --t-base: 0ms; --t-slow: 0ms; }
+}
