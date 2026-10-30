@@ -1,0 +1,13 @@
+{
+  "product": "anysport",
+  "platforms": {
+    "desktop": {
+      "min_version_code": 1,
+      "latest_version_code": 1,
+      "force": false,
+      "message_sv": "Ny version av AnySport-hubben finns att hämta.",
+      "message_en": "A new version of the AnySport hub is available.",
+      "store_url": "https://viccom.se/anysport"
+    }
+  }
+}

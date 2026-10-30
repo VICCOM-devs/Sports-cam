@@ -15,7 +15,7 @@ import cv2
 import httpx
 import numpy as np
 
-log = logging.getLogger("sportscam.vision.detector")
+log = logging.getLogger("anysport.vision.detector")
 
 MODELS = {
     "nano": ("yolox_nano.onnx", 416, "c789161ed43c8269fcd4e67c67eeeb4e80c622da2eb296a20bc6007bd18a0b7d"),

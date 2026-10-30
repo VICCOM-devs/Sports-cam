@@ -7,9 +7,9 @@ from fastapi.testclient import TestClient
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "hub"))
 
-from sportscam.config import Config  # noqa: E402
-from sportscam.main import create_app  # noqa: E402
-from sportscam.updates import UpdateChecker  # noqa: E402
+from anysport.config import Config  # noqa: E402
+from anysport.main import create_app  # noqa: E402
+from anysport.updates import UpdateChecker  # noqa: E402
 
 MODELS = Path("/home/claude/downloads/models")
 

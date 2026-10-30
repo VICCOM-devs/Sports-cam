@@ -27,7 +27,7 @@ from .clips import ClipBuilder, RecordingIndex
 from .vision.rink import TEMPLATES, Calibration, calibrate
 from .vision.service import VisionService
 
-log = logging.getLogger("sportscam")
+log = logging.getLogger("anysport")
 WEB_DIR = Path(__file__).resolve().parents[2] / "web"
 
 Role = Literal["admin", "scorekeeper", "camera", "viewer"]

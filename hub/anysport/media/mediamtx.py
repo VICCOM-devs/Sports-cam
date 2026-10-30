@@ -22,7 +22,7 @@ import httpx
 
 from .base import MediaEngine, StreamInfo
 
-log = logging.getLogger("sportscam.media.mediamtx")
+log = logging.getLogger("anysport.media.mediamtx")
 
 MEDIAMTX_VERSION = "v1.15.3"
 RELEASE_BASE = f"https://github.com/bluenviron/mediamtx/releases/download/{MEDIAMTX_VERSION}"

@@ -1,6 +1,6 @@
 {
-  "name": "VICCOM Sports Cam",
-  "short_name": "Sports Cam",
+  "name": "AnySport",
+  "short_name": "AnySport",
   "start_url": "/",
   "display": "standalone",
   "background_color": "#0A0C10",

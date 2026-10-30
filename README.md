@@ -1,8 +1,8 @@
-# VICCOM Sports Cam (working name)
+# AnySport
 
 Multi-phone sports camera system for small clubs. Parents' phones film from around the rink, a
 laptop at the rink is the hub, anyone with the match code watches live from any angle. Ice hockey
-first. Spec: *Phase 1 Spec – Multi-Phone Sports Camera System* (Claude Doc in the project).
+first. Spec: *Phase 1 Spec – Multi-Phone AnySportera System* (Claude Doc in the project).
 
 **Built so far (M1–M3 parts):** capture + QR join + multi-angle live viewing + score/clock + tags +
 recording; player detection, tracking, rink calibration, team colours, multi-camera fusion, live
@@ -22,9 +22,9 @@ The hub listens on **http://\<lan-ip\>:8080** (viewers, lobby) and **https://\<l
 (camera phones; browsers only allow the camera on https). The https certificate is self-signed:
 the first time a camera phone opens it, tap *Advanced → Proceed* once.
 
-Environment variables: `SPORTSCAM_DATA` (data dir), `SPORTSCAM_HTTP_PORT`, `SPORTSCAM_HTTPS_PORT`,
-`SPORTSCAM_HOST` (LAN IP for the QR code), `SPORTSCAM_MEDIA` (`auto` | `pyrtc` | `mediamtx`),
-`SPORTSCAM_RECORD` (`0` to disable), `SPORTSCAM_UPDATE_URL`.
+Environment variables: `ANYSPORT_DATA` (data dir), `ANYSPORT_HTTP_PORT`, `ANYSPORT_HTTPS_PORT`,
+`ANYSPORT_HOST` (LAN IP for the QR code), `ANYSPORT_MEDIA` (`auto` | `pyrtc` | `mediamtx`),
+`ANYSPORT_RECORD` (`0` to disable), `ANYSPORT_UPDATE_URL`.
 
 ## Media engines
 
@@ -33,31 +33,31 @@ Environment variables: `SPORTSCAM_DATA` (data dir), `SPORTSCAM_HTTP_PORT`, `SPOR
 | `pyrtc` (built-in, aiortc) | default until MediaMTX is present; tests | re-encodes per viewer, fine for 1–3 cameras |
 | `mediamtx` | real games | hub downloads MediaMTX v1.15.3 for the OS on first run, verifies the SHA-256 from the release, runs it as a child process; WHIP/WHEP are proxied; recordings are fMP4 segments |
 
-Switch with `SPORTSCAM_MEDIA=mediamtx` (downloads on first start; needs internet once).
+Switch with `ANYSPORT_MEDIA=mediamtx` (downloads on first start; needs internet once).
 
 ## Layout
 
 ```
-hub/sportscam/      FastAPI hub: API, WebSocket events, WHIP/WHEP signalling, static web apps
+hub/anysport/      FastAPI hub: API, WebSocket events, WHIP/WHEP signalling, static web apps
   media/            pyrtc.py (aiortc) · mediamtx.py (process + proxy)
   updates.py        version gate (viccom-auto-update)  ·  certs.py  self-signed https
 web/                index (join) · camera · viewer · lobby  — vanilla ES modules, no build step
   css/tokens.css    design tokens (design-system/MASTER.md)
   i18n/             sv.json, en.json
 tests/              pytest API tests + Playwright end-to-end (fake camera → viewer frames)
-docs/updates/       sports-cam.json → copy to VICCOM_Site/updates/
+docs/updates/       anysport.json → copy to VICCOM_Site/updates/
 ```
 
 ## Vision
 
 - Detector: YOLOX (Apache-2.0) via ONNX Runtime; `nano` (CPU, ~20–40 ms/frame) or `s`
-  (`SPORTSCAM_MODEL=s`, for a GPU hub). Downloaded from the YOLOX GitHub release on first use and
-  SHA-256 verified. `SPORTSCAM_MODELS` points at a folder with the .onnx files to skip downloads.
+  (`ANYSPORT_MODEL=s`, for a GPU hub). Downloaded from the YOLOX GitHub release on first use and
+  SHA-256 verified. `ANYSPORT_MODELS` points at a folder with the .onnx files to skip downloads.
 - Calibration: `lobby → camera card → Kalibrera`. Tap ≥4 landmarks on the rink drawing and the
   same spots in the frame; the overlay shows the fitted rink lines and the RMS error in metres.
 - Live: `/api/positions`, WebSocket `positions` messages (players, director camera, crops).
   Post-game: `recordings/<code>/tracking.json` (paths + stats), `clips/` (mp4 per tag).
-- `SPORTSCAM_VISION=0` turns it off; `SPORTSCAM_VISION_FPS` (default 5).
+- `ANYSPORT_VISION=0` turns it off; `ANYSPORT_VISION_FPS` (default 5).
 
 ## Tests
 
@@ -83,8 +83,8 @@ Match creation is only accepted from the hub machine itself (localhost).
 
 ## Updates
 
-Layer 1 version gate: the hub fetches `https://viccom.se/updates/sports-cam.json` on start and
+Layer 1 version gate: the hub fetches `https://viccom.se/updates/anysport.json` on start and
 every 30 min; `/api/version` exposes the result; the web apps show a nudge or a blocking screen.
 Offline never blocks. Web assets are versioned with the hub build, so a new hub build shows a
-"New version – reload" toast on open pages. To ship: bump `hub/sportscam/version.py`
+"New version – reload" toast on open pages. To ship: bump `hub/anysport/version.py`
 (SEMVER + BUILD_NUMBER), publish the build, then raise `latest_version_code` in the JSON.

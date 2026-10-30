@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no">
 <meta name="theme-color" content="#0A0C10">
-<title>Sports Cam – Camera</title>
+<title>AnySport – Camera</title>
 <link rel="stylesheet" href="/css/tokens.css?v={{BUILD}}">
 <link rel="stylesheet" href="/css/app.css?v={{BUILD}}">
 <style>
@@ -30,7 +30,7 @@
 
 <div class="overlay">
   <div class="hud">
-    <span class="brand">VICCOM <span>Sports Cam</span></span>
+    <span class="brand">Any<span>Sport</span></span>
     <span class="grow"></span>
     <span id="state" class="chip offline"></span>
     <span id="battery" class="chip hidden"></span>
@@ -78,11 +78,11 @@ if (!window.isSecureContext) $("insecure").classList.remove("hidden");
 
 // positions
 const POS = ["cornerA", "cornerB", "cornerC", "cornerD", "center", "goalHome", "goalAway"];
-let position = localStorage.getItem("sportscam.position") || "cornerA";
+let position = localStorage.getItem("anysport.position") || "cornerA";
 const posEl = $("positions");
 for (const p of POS) {
   const b = document.createElement("button"); b.className = "btn" + (p === position ? " on" : ""); b.textContent = t(`cam.position.${p}`);
-  b.onclick = () => { position = p; localStorage.setItem("sportscam.position", p); posEl.querySelectorAll(".btn").forEach((x) => x.classList.toggle("on", x === b)); haptic(); };
+  b.onclick = () => { position = p; localStorage.setItem("anysport.position", p); posEl.querySelectorAll(".btn").forEach((x) => x.classList.toggle("on", x === b)); haptic(); };
   posEl.appendChild(b);
 }
 

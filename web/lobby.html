@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="theme-color" content="#0A0C10">
-<title>Sports Cam – Hub</title>
+<title>AnySport – Hub</title>
 <link rel="stylesheet" href="/css/tokens.css?v={{BUILD}}">
 <link rel="stylesheet" href="/css/app.css?v={{BUILD}}">
 <style>
@@ -34,7 +34,7 @@
 </head>
 <body>
 <header class="topbar">
-  <span class="brand">VICCOM <span>Sports Cam</span></span>
+  <span class="brand">Any<span>Sport</span></span>
   <span class="chip faint" id="ver"></span>
   <span class="grow"></span>
   <span class="chip" id="engine"></span>
@@ -116,7 +116,7 @@ $("engine").textContent = `${t("lobby.engine")}: ${v.media}`;
 const hubInfo = await api("/api/hub");
 $("recdir").textContent = hubInfo.recordings_dir;
 
-let created = null, adminToken = sessionStorage.getItem("sportscam.admin"), live;
+let created = null, adminToken = sessionStorage.getItem("anysport.admin"), live;
 function show(c) {
   created = c;
   $("new").classList.add("hidden"); $("match").classList.remove("hidden");
@@ -187,8 +187,8 @@ $("form").onsubmit = async (e) => {
   e.preventDefault(); haptic("medium");
   try {
     const c = await api("/api/matches", { method: "POST", body: { home: $("home").value.trim(), away: $("away").value.trim(), home_color: $("hc").value, away_color: $("ac").value } });
-    adminToken = c.admin_token; sessionStorage.setItem("sportscam.admin", adminToken);
-    sessionStorage.setItem("sportscam.created", JSON.stringify(c));
+    adminToken = c.admin_token; sessionStorage.setItem("anysport.admin", adminToken);
+    sessionStorage.setItem("anysport.created", JSON.stringify(c));
     show(c);
   } catch { toast(t("err.generic")); }
 };
@@ -201,7 +201,7 @@ $("start").onclick = () => api("/api/match/start", { method: "POST", token: admi
 $("end").onclick = () => api("/api/match/end", { method: "POST", token: adminToken }).catch(() => toast(t("err.generic")));
 
 // resume the current match after a reload
-const prev = sessionStorage.getItem("sportscam.created");
+const prev = sessionStorage.getItem("anysport.created");
 if (prev && adminToken) { try { const c = JSON.parse(prev); const m = hubInfo.matches.find((x) => x.id === c.match.id); if (m && m.status !== "ended") { c.match = m; show(c); } } catch { /* start fresh */ } }
 document.body.dataset.ready = "1";
 </script>

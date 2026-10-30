@@ -1,6 +1,6 @@
 """Version gate (viccom-auto-update layer 1).
 
-Fetches https://viccom.se/updates/sports-cam.json on start and every 30 minutes. The web apps
+Fetches https://viccom.se/updates/anysport.json on start and every 30 minutes. The web apps
 read the result from /api/version and show a nudge or a blocking screen. Offline or a broken
 JSON never blocks: the hub keeps running and tries again later.
 
@@ -9,7 +9,7 @@ JSON shape (one entry per platform):
   "platforms": {
     "desktop": {"min_version_code": 1, "latest_version_code": 3, "force": false,
                 "message_sv": "...", "message_en": "...",
-                "store_url": "https://viccom.se/sports-cam"}
+                "store_url": "https://viccom.se/anysport"}
   }
 }
 """
@@ -23,7 +23,7 @@ import httpx
 
 from . import version
 
-log = logging.getLogger("sportscam.updates")
+log = logging.getLogger("anysport.updates")
 
 
 class UpdateChecker:

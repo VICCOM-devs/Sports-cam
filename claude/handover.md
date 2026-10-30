@@ -1,11 +1,11 @@
-# Sports Cam – handover
+# AnySport – handover
 
-Read `viccom-studio` first. Spec of record: Claude Doc *Phase 1 Spec – Multi-Phone Sports Camera
+Read `viccom-studio` first. Spec of record: Claude Doc *Phase 1 Spec – Multi-Phone AnySportera
 System (Ice Hockey)* in the "Camera Project For Sports" project.
 
 ## State (2026-10-30, afternoon)
 
-- **Repo**: `VICCOM-devs/sports-cam`, branch `main`. Everything below is pushed.
+- **Repo**: `VICCOM-devs/anysport`, branch `main`. Everything below is pushed.
 - **M1–M3 built and tested** (12 tests, e2e in a real browser, stable over 6 consecutive runs):
   capture + QR join + viewer (M1); detection (YOLOX nano, ONNX, Apache-2.0), per-camera tracker,
   rink calibration page, jersey-colour teams, multi-camera fusion, live rink map, distance/top
@@ -20,8 +20,8 @@ System (Ice Hockey)* in the "Camera Project For Sports" project.
 
 ## Earlier state
 
-- **Version** 0.1.0, build 1, channel alpha. Working name "Sports Cam" (`se.viccom.sportscam`
-  reserved as package id). Product name not decided.
+- **Version** 0.1.0, build 1, channel alpha. Name decided 30 Oct 2026: **AnySport** (`se.viccom.anysport`
+  ). Repo still called sports-cam; rename when convenient.
 - **Milestone M1 done in code**: hub (FastAPI + aiortc/MediaMTX), QR/code join, browser camera
   page publishing over WHIP, viewer with angle switching over WHEP, scoreboard + game clock,
   tags (Goal/Shot/Save/Hit/Penalty/Highlight), WebSocket live state, recording to MP4, lobby with
@@ -30,8 +30,8 @@ System (Ice Hockey)* in the "Camera Project For Sports" project.
   recording file). `python -m pytest tests -q` ≈ 9 s.
 - **Not yet tested on real hardware**: no real phone or rink yet. The https self-signed step on
   phones and Wi-Fi behaviour are the first things to try.
-- **Repo**: none yet. Code is in Claude's workspace at `/home/claude/sports-cam` with local git
-  history. Victor creates `VICCOM-devs/sports-cam`; then push.
+- **Repo**: none yet. Code is in Claude's workspace at `/home/claude/anysport` with local git
+  history. Victor creates `VICCOM-devs/anysport`; then push.
 
 ## Decisions
 
@@ -53,13 +53,13 @@ System (Ice Hockey)* in the "Camera Project For Sports" project.
 
 1. Push to the repo, run on Victor's Windows PC with two real phones on a home router. Fix what
    breaks (expect: cert prompt wording, autoplay/unmute, battery dimmer).
-2. `SPORTSCAM_MEDIA=mediamtx` on Windows: confirm download, checksum, WHIP via proxy, fMP4 recording.
+2. `ANYSPORT_MEDIA=mediamtx` on Windows: confirm download, checksum, WHIP via proxy, fMP4 recording.
 3. Rink calibration UI (tap landmarks) + camera → rink homography.
 4. Player detection on recorded clips (Apache-licensed detector; see spec risk on YOLO/AGPL).
 5. Referral button on the join page already links viccom.se; make a real landing page later.
 
 ## How to push an update
 
-Bump `hub/sportscam/version.py` (SEMVER, BUILD_NUMBER+1), tag, build, then raise
-`latest_version_code` in `VICCOM_Site/updates/sports-cam.json` (copy from `docs/updates/`).
+Bump `hub/anysport/version.py` (SEMVER, BUILD_NUMBER+1), tag, build, then raise
+`latest_version_code` in `VICCOM_Site/updates/anysport.json` (copy from `docs/updates/`).
 Raise `min_version_code` only for breaking protocol changes, after asking Victor.

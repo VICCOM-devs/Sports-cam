@@ -1,4 +1,4 @@
-"""Run the hub: ``python -m sportscam``.
+"""Run the hub: ``python -m anysport``.
 
 Serves HTTP (viewers, lobby) and HTTPS (camera phones, which need a secure origin) at once.
 """

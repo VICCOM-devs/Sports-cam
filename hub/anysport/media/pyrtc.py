@@ -18,7 +18,7 @@ from aiortc.contrib.media import MediaPlayer, MediaRelay
 
 from .base import MediaEngine, StreamInfo
 
-log = logging.getLogger("sportscam.media.pyrtc")
+log = logging.getLogger("anysport.media.pyrtc")
 
 
 class FfmpegRecorder:

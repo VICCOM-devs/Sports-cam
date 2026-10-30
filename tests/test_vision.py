@@ -10,11 +10,11 @@ import pytest
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "hub"))
 
-from sportscam.vision.detector import Detection, PersonDetector  # noqa: E402
-from sportscam.vision.fusion import Fusion, Observation  # noqa: E402
-from sportscam.vision.rink import TEMPLATES, calibrate  # noqa: E402
-from sportscam.vision.teams import TeamClassifier, torso_feature  # noqa: E402
-from sportscam.vision.tracker import Tracker  # noqa: E402
+from anysport.vision.detector import Detection, PersonDetector  # noqa: E402
+from anysport.vision.fusion import Fusion, Observation  # noqa: E402
+from anysport.vision.rink import TEMPLATES, calibrate  # noqa: E402
+from anysport.vision.teams import TeamClassifier, torso_feature  # noqa: E402
+from anysport.vision.tracker import Tracker  # noqa: E402
 
 MODELS = Path("/home/claude/downloads/models")
 

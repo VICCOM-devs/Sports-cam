@@ -25,7 +25,7 @@ from .rink import TEMPLATES, Calibration
 from .teams import TeamClassifier, torso_feature
 from .tracker import Tracker
 
-log = logging.getLogger("sportscam.vision")
+log = logging.getLogger("anysport.vision")
 
 
 @dataclass

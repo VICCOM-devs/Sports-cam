@@ -29,7 +29,7 @@ def ensure_cert(certs_dir: Path, host_ip: str) -> tuple[Path, Path]:
             pass  # regenerate
 
     key = ec.generate_private_key(ec.SECP256R1())
-    name = x509.Name([x509.NameAttribute(NameOID.COMMON_NAME, "VICCOM Sports Cam hub")])
+    name = x509.Name([x509.NameAttribute(NameOID.COMMON_NAME, "AnySport hub")])
     san = [x509.DNSName("localhost"), x509.IPAddress(ipaddress.ip_address("127.0.0.1"))]
     try:
         san.append(x509.IPAddress(ipaddress.ip_address(host_ip)))

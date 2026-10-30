@@ -15,7 +15,7 @@ export const t = (key, vars = {}) =>
   (strings[key] ?? key).replace(/\{(\w+)\}/g, (_, k) => vars[k] ?? "");
 
 // ---------- session ----------
-const KEY = "sportscam.session";
+const KEY = "anysport.session";
 export function session() { try { return JSON.parse(localStorage.getItem(KEY) || "null"); } catch { return null; } }
 export function saveSession(s) { localStorage.setItem(KEY, JSON.stringify(s)); }
 export function clearSession() { localStorage.removeItem(KEY); }
@@ -87,9 +87,9 @@ export async function updateGate() {
     const a = el.querySelector("a"); a.textContent = t("update.cta"); a.href = u.store_url || "https://viccom.se";
     document.body.appendChild(el);
   } else if (u.status === "nudge") {
-    const seen = localStorage.getItem("sportscam.nudged");
+    const seen = localStorage.getItem("anysport.nudged");
     if (seen !== String(u.latest_version_code)) {
-      localStorage.setItem("sportscam.nudged", String(u.latest_version_code));
+      localStorage.setItem("anysport.nudged", String(u.latest_version_code));
       toast(msg || t("update.nudge"), { action: t("update.cta"), onAction: () => window.open(u.store_url || "https://viccom.se", "_blank"), sticky: true });
     }
   }

@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <meta name="theme-color" content="#0A0C10">
-<title>Sports Cam – Live</title>
+<title>AnySport – Live</title>
 <link rel="stylesheet" href="/css/tokens.css?v={{BUILD}}">
 <link rel="stylesheet" href="/css/app.css?v={{BUILD}}">
 <style>
@@ -80,7 +80,7 @@
 </head>
 <body>
 <header class="topbar">
-  <span class="brand">VICCOM <span>Sports Cam</span></span>
+  <span class="brand">Any<span>Sport</span></span>
   <span class="grow"></span>
   <span id="net" class="chip offline hidden" data-i18n="view.offline"></span>
   <span id="viewers" class="chip faint"></span>
@@ -334,12 +334,12 @@ function addEvent(ev, prepend = true) {
 // Positions arrive ~5×/s and the video lags behind by ~0.5 s, so frames are buffered and drawn
 // at (now - delay) with interpolation between the two nearest frames.
 const OV_DELAY_MS = 600;
-let ovMode = Number(localStorage.getItem("sportscam.ov") ?? 2);  // 0 off · 1 rings+tags · 2 + trails & team shape
+let ovMode = Number(localStorage.getItem("anysport.ov") ?? 2);  // 0 off · 1 rings+tags · 2 + trails & team shape
 const OV_NAMES = ["view.ov.off", "view.ov.rings", "view.ov.full"];
 let ovFrames = [];      // [{t, size, tracks}] for the current camera
 let selected = null;    // pid
 const ovSvg = $("ov");
-function setOvMode(m) { ovMode = m; localStorage.setItem("sportscam.ov", m); $("ovbtn").textContent = t(OV_NAMES[m]); $("ovbtn").classList.toggle("on", m > 0); if (!m) ovSvg.innerHTML = ""; }
+function setOvMode(m) { ovMode = m; localStorage.setItem("anysport.ov", m); $("ovbtn").textContent = t(OV_NAMES[m]); $("ovbtn").classList.toggle("on", m > 0); if (!m) ovSvg.innerHTML = ""; }
 $("ovbtn").onclick = (e) => { e.stopPropagation(); haptic(); setOvMode((ovMode + 1) % 3); };
 setOvMode(ovMode);
 function pushOverlay(data) {

@@ -15,7 +15,7 @@ from playwright.sync_api import sync_playwright
 ROOT = Path(__file__).resolve().parents[1]
 SHOTS = ROOT / "tests" / "screenshots"
 MODELS = Path("/home/claude/downloads/models")
-FAKE_VIDEO = Path("/tmp/sportscam-fake-cam.y4m")
+FAKE_VIDEO = Path("/tmp/anysport-fake-cam.y4m")
 
 
 def _fake_video() -> Path:
@@ -35,12 +35,12 @@ def _free_port():
 def hub(tmp_path_factory):
     data = tmp_path_factory.mktemp("hubdata")
     http, https = _free_port(), _free_port()
-    env = {**os.environ, "SPORTSCAM_DATA": str(data), "SPORTSCAM_HTTP_PORT": str(http),
-           "SPORTSCAM_HTTPS_PORT": str(https), "SPORTSCAM_HOST": "127.0.0.1",
-           "SPORTSCAM_MEDIA": "pyrtc", "SPORTSCAM_UPDATE_URL": "http://127.0.0.1:1/none.json",
-           "SPORTSCAM_MODELS": str(MODELS), "SPORTSCAM_VISION_FPS": "5",
+    env = {**os.environ, "ANYSPORT_DATA": str(data), "ANYSPORT_HTTP_PORT": str(http),
+           "ANYSPORT_HTTPS_PORT": str(https), "ANYSPORT_HOST": "127.0.0.1",
+           "ANYSPORT_MEDIA": "pyrtc", "ANYSPORT_UPDATE_URL": "http://127.0.0.1:1/none.json",
+           "ANYSPORT_MODELS": str(MODELS), "ANYSPORT_VISION_FPS": "5",
            "PYTHONPATH": str(ROOT / "hub")}
-    proc = subprocess.Popen([sys.executable, "-m", "sportscam"], env=env, cwd=ROOT / "hub")
+    proc = subprocess.Popen([sys.executable, "-m", "anysport"], env=env, cwd=ROOT / "hub")
     base = f"http://127.0.0.1:{http}"
     for _ in range(100):
         try:
@@ -151,7 +151,7 @@ def test_full_match_flow(hub):
         viewer.click('#tabs [data-pane="rink"]')
         viewer.wait_for_function("document.querySelectorAll('#rinkmap circle.p').length > 0", timeout=30000)
         viewer.screenshot(path=str(SHOTS / "viewer-rink.png"))
-        st = httpx.get(f"{base}/api/match", headers={"X-Token": lobby.evaluate("sessionStorage.getItem('sportscam.admin')")}).json()
+        st = httpx.get(f"{base}/api/match", headers={"X-Token": lobby.evaluate("sessionStorage.getItem('anysport.admin')")}).json()
         assert st["vision"]["enabled"] and sum(c["detections"] for c in st["vision"]["cameras"].values()) > 0
         time.sleep(6)
         viewer.click('#tabs [data-pane="players"]')
@@ -166,18 +166,27 @@ def test_full_match_flow(hub):
         sk.click('.rrow [data-a="out"]')
         sk.wait_for_selector(".rrow.out")
         sk.screenshot(path=str(SHOTS / "scorekeeper-roster.png"))
-        assert viewer.evaluate("fetch('/api/roster',{headers:{'X-Token':JSON.parse(localStorage.getItem('sportscam.session')).token}}).then(r=>r.json()).then(j=>j.length)") == 0
+        assert viewer.evaluate("fetch('/api/roster',{headers:{'X-Token':JSON.parse(localStorage.getItem('anysport.session')).token}}).then(r=>r.json()).then(j=>j.length)") == 0
 
         # --- link a named player to a tracked dot → name tag with speed appears in the overlay
-        adm = {"X-Token": lobby.evaluate("sessionStorage.getItem('sportscam.admin')")}
+        adm = {"X-Token": lobby.evaluate("sessionStorage.getItem('anysport.admin')")}
         rid = httpx.post(f"{base}/api/roster", json={"team": "away", "number": "9", "name": "Noa Berg"}, headers=adm).json()["id"]
-        pid = httpx.get(f"{base}/api/positions", headers=adm).json()["players"][0]["id"]
-        httpx.patch(f"{base}/api/roster/{rid}", json={"player_id": pid}, headers=adm)
         wide = browser.new_context(viewport={"width": 1100, "height": 700}, locale="sv-SE").new_page()
         wide.goto(f"{base}/viewer.html?c={code}&t={adm['X-Token']}"); wide.wait_for_selector("body[data-ready]")
         wide.wait_for_function("document.querySelectorAll('#ov ellipse.ring').length >= 1", timeout=20000)
         wide.click("#zoom")  # full frame for the screenshot
-        wide.wait_for_function("document.querySelector('#ov .tag') !== null", timeout=20000)
+        # the looping test video makes tracked ids churn, so link to whoever is on screen right now, retrying
+        for _ in range(5):
+            players = httpx.get(f"{base}/api/positions", headers=adm).json()["players"]
+            if players:
+                httpx.patch(f"{base}/api/roster/{rid}", json={"player_id": players[0]["id"]}, headers=adm)
+            try:
+                wide.wait_for_function("document.querySelector('#ov .tag') !== null", timeout=4000)
+                break
+            except Exception:
+                continue
+        else:
+            raise AssertionError("name tag never appeared in the overlay")
         time.sleep(0.6)
         wide.screenshot(path=str(SHOTS / "viewer-overlay.png"))
 

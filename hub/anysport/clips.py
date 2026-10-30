@@ -13,7 +13,7 @@ import shutil
 import time
 from pathlib import Path
 
-log = logging.getLogger("sportscam.clips")
+log = logging.getLogger("anysport.clips")
 
 PRE_S, POST_S = 8.0, 6.0
 KIND_SCORE = {"goal": 100, "penalty": 60, "hit": 70, "save": 50, "shot": 40, "highlight": 30, "score": 0, "period": 0}

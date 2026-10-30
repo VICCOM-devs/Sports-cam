@@ -1,4 +1,4 @@
-# Sports Cam – design system (MASTER)
+# AnySport – design system (MASTER)
 
 Look: **broadcast dark**. Near-black surfaces, one ice-blue accent, team colours taken from the
 jerseys drive the overlays so every match looks like its own broadcast. Code reads these tokens
