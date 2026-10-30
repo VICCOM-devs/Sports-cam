@@ -46,6 +46,10 @@
   .rinkmap .lbl { font: 700 1.6px var(--font); fill: #fff; text-anchor: middle; paint-order: stroke; stroke: #000; stroke-width: .4px; pointer-events: none; }
   .players { display: grid; gap: var(--s2); }
   .clips { display: grid; gap: var(--s3); }
+  .rrow { display: flex; gap: var(--s2); align-items: center; padding: var(--s2) var(--s3); background: var(--surface-2); border-radius: var(--r-chip); font-size: var(--small); }
+  .rrow .btn { min-height: 36px; padding: 0 10px; font-size: 12px; }
+  .rrow.out { opacity: .55; }
+  .rinkmap .p.pick { cursor: pointer; stroke: var(--accent); stroke-width: .5; }
   .clip { background: var(--surface-1); border: 1px solid var(--stroke); border-radius: var(--r-card); overflow: hidden; }
   .clip video { width: 100%; aspect-ratio: 16 / 9; background: #000; display: block; }
   .clip .meta { display: flex; gap: var(--s2); align-items: center; padding: var(--s2) var(--s3); font-size: var(--small); }
@@ -88,6 +92,15 @@
     <div class="pane hidden" id="pane-players" style="padding: var(--s3) var(--s4)">
       <div class="players" id="players"></div>
       <p class="dim" id="playersempty" data-i18n="view.players.empty"></p>
+      <div id="rosterbox" class="card stack hidden" style="margin-top: var(--s4)">
+        <h2 data-i18n="roster.title"></h2>
+        <p class="dim" style="font-size: var(--small)" data-i18n="roster.hint"></p>
+        <div id="roster" class="stack" style="gap: var(--s2)"></div>
+        <form id="rosterform" class="stack" style="gap: var(--s2)">
+          <div class="row"><select id="r-team" class="input grow"></select><input id="r-num" class="input" style="width: 84px; flex: none" maxlength="4" data-i18n-ph="roster.number"></div>
+          <div class="row"><input id="r-name" class="input grow" maxlength="40" required data-i18n-ph="roster.name"><button class="btn primary" style="flex: none" data-i18n="roster.add"></button></div>
+        </form>
+      </div>
     </div>
 
     <div class="pane" id="pane-live">
@@ -290,7 +303,7 @@ document.querySelectorAll("#tabs .btn").forEach((b) => (b.onclick = () => {
   pane = b.dataset.pane; haptic();
   document.querySelectorAll("#tabs .btn").forEach((x) => x.classList.toggle("on", x === b));
   document.querySelectorAll(".pane").forEach((p) => p.classList.toggle("hidden", p.id !== `pane-${pane}`));
-  if (pane === "players") refreshStats();
+  if (pane === "players") { refreshStats(); refreshRoster(); }
   if (pane === "clips") refreshClips();
 }));
 
@@ -322,7 +335,8 @@ function applyPositions(data) {
     let g = dots.get(p.id);
     if (!g) {
       g = document.createElementNS("http://www.w3.org/2000/svg", "g");
-      g.innerHTML = `<circle class="p" r="1"/><text class="lbl" dy="-1.6"></text>`;
+      g.innerHTML = `<circle class="p${canScore ? " pick" : ""}" r="1"/><text class="lbl" dy="-1.6"></text>`;
+      g.querySelector("circle").onclick = () => pickRoster(p.id);
       dotsLayer.appendChild(g); dots.set(p.id, g);
     }
     const c = g.querySelector("circle"); c.setAttribute("cx", p.x); c.setAttribute("cy", -p.y);
@@ -355,6 +369,49 @@ async function refreshStats() {
 }
 drawRinkBase();
 setInterval(() => { if (pane === "players") refreshStats(); if (pane === "clips") refreshClips(); }, 3000);
+
+// ---------- roster (scorekeeper/admin): names, numbers, opt-out, link to a dot ----------
+let roster = [];
+async function refreshRoster() {
+  if (!canScore) return;
+  $("rosterbox").classList.remove("hidden");
+  try { roster = await api("/api/roster", { token: sess.token }); } catch { return; }
+  const sel = $("r-team");
+  if (!sel.options.length) { for (const k of ["home", "away"]) { const o = document.createElement("option"); o.value = k; sel.appendChild(o); } }
+  sel.options[0].textContent = state.home; sel.options[1].textContent = state.away;
+  const list = $("roster"); list.innerHTML = "";
+  for (const r of roster) {
+    const el = document.createElement("div"); el.className = "rrow" + (r.opted_out ? " out" : "");
+    el.innerHTML = `<span class="swatch" style="background:var(--${r.team})"></span><b></b><span class="grow dim"></span><button class="btn" data-a="out"></button><button class="btn ghost" data-a="del">✕</button>`;
+    el.querySelector("b").textContent = r.number ? `#${r.number} ${r.name}` : r.name;
+    el.querySelector(".dim").textContent = r.player_id ? `${t("roster.linked")} ${r.player_id}` : t("roster.unlinked");
+    el.querySelector('[data-a="out"]').textContent = r.opted_out ? t("roster.optin") : t("roster.optout");
+    el.querySelector('[data-a="out"]').onclick = () => api(`/api/roster/${r.id}`, { method: "PATCH", token: sess.token, body: { opted_out: !r.opted_out } }).then(refreshRoster);
+    el.querySelector('[data-a="del"]').onclick = () => api(`/api/roster/${r.id}`, { method: "DELETE", token: sess.token }).then(refreshRoster);
+    list.appendChild(el);
+  }
+}
+$("rosterform").onsubmit = async (e) => {
+  e.preventDefault(); haptic("medium");
+  try {
+    await api("/api/roster", { method: "POST", token: sess.token, body: { team: $("r-team").value, number: $("r-num").value.trim() || null, name: $("r-name").value.trim() } });
+    $("r-num").value = ""; $("r-name").value = ""; refreshRoster();
+  } catch { toast(t("err.generic")); }
+};
+// tap a dot on the rink map (admin) → pick who it is
+function pickRoster(playerId) {
+  if (!canScore) return;
+  haptic();
+  const s = document.createElement("div"); s.className = "sheet";
+  const opts = roster.map((r) => `<button class="btn" data-id="${r.id}" style="border-color:var(--${r.team})">${r.number ? "#" + r.number + " " : ""}${r.name}</button>`).join("");
+  s.innerHTML = `<div class="stack"><h2></h2><div class="stack" style="gap:8px">${opts}</div><button class="btn ghost" data-id="">${t("close")}</button></div>`;
+  s.querySelector("h2").textContent = `${t("roster.whois")} ${playerId}?`;
+  s.querySelectorAll("button").forEach((b) => (b.onclick = async () => {
+    s.remove();
+    if (b.dataset.id) { await api(`/api/roster/${b.dataset.id}`, { method: "PATCH", token: sess.token, body: { player_id: playerId } }).catch(() => toast(t("err.generic"))); refreshRoster(); }
+  }));
+  document.body.appendChild(s);
+}
 
 // ---------- clips ----------
 async function refreshClips() {

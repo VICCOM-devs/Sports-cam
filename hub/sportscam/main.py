@@ -246,6 +246,21 @@ class TeamMapBody(BaseModel):
     B: Literal["home", "away"]
 
 
+class RosterBody(BaseModel):
+    team: Literal["home", "away"]
+    number: str | None = Field(default=None, max_length=4)
+    name: str = Field(min_length=1, max_length=40)
+    opted_out: bool = False
+
+
+class RosterPatch(BaseModel):
+    team: Literal["home", "away"] | None = None
+    number: str | None = Field(default=None, max_length=4)
+    name: str | None = Field(default=None, max_length=40)
+    opted_out: bool | None = None
+    player_id: int | None = None     # link to a tracked player; 0 clears
+
+
 # --------------------------------------------------------------------------- routes
 def register_routes(app: FastAPI, hub: Hub) -> None:
     def is_local(request: Request) -> bool:
@@ -506,6 +521,51 @@ def register_routes(app: FastAPI, hub: Hub) -> None:
         hub.vision.set_team_map(m["id"], mapping)
         await hub.broadcast_state(m["id"])
         return mapping
+
+    # -- roster (names, numbers, opt-out). Opted-out players get no name, stats, path or clips as subject.
+    def _apply_roster_link(m: dict, row: dict) -> None:
+        if row.get("player_id"):
+            label = None if row["opted_out"] else (f"#{row['number']} {row['name']}" if row.get("number") else row["name"])
+            hub.vision.label_player(m["id"], int(row["player_id"]), label, bool(row["opted_out"]))
+
+    @app.get("/api/roster")
+    async def get_roster(dep=Depends(auth("viewer"))):
+        row, m = dep
+        items = hub.db.roster(m["id"])
+        if ROLE_RANK[row["role"]] < ROLE_RANK["scorekeeper"]:
+            items = [{k: v for k, v in r.items() if k != "opted_out"} for r in items if not r["opted_out"]]
+        return items
+
+    @app.post("/api/roster", status_code=201)
+    async def add_roster(body: RosterBody, dep=Depends(auth("scorekeeper"))):
+        _, m = dep
+        return hub.db.add_roster(m["id"], body.team, body.number, body.name, body.opted_out)
+
+    @app.patch("/api/roster/{rid}")
+    async def patch_roster(rid: int, body: RosterPatch, dep=Depends(auth("scorekeeper"))):
+        _, m = dep
+        fields = {k: v for k, v in body.model_dump().items() if v is not None}
+        if "player_id" in fields:
+            if fields["player_id"] == 0:
+                fields["player_id"] = None
+            else:  # one tracked player can only be one person
+                for other in hub.db.roster(m["id"]):
+                    if other["player_id"] == fields["player_id"] and other["id"] != rid:
+                        hub.db.update_roster(other["id"], player_id=None)
+        if "opted_out" in fields:
+            fields["opted_out"] = int(fields["opted_out"])
+        row = hub.db.update_roster(rid, **fields)
+        if not row or row["match_id"] != m["id"]:
+            raise HTTPException(404, "no such roster entry")
+        _apply_roster_link(m, row)
+        await hub.broadcast_state(m["id"])
+        return row
+
+    @app.delete("/api/roster/{rid}")
+    async def delete_roster(rid: int, dep=Depends(auth("scorekeeper"))):
+        _, m = dep
+        hub.db.delete_roster(rid)
+        return Response(status_code=204)
 
     # -- clips
     @app.get("/api/clips")

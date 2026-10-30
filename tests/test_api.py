@@ -101,3 +101,23 @@ def test_rink_and_calibration_api(client):
     assert client.get("/api/positions", headers=admin).json()["players"] == []
     assert client.get("/api/stats", headers=admin).json()["source"] == "none"
     assert client.post("/api/teams/map", json={"A": "away", "B": "home"}, headers=admin).json() == {"A": "away", "B": "home"}
+
+
+def test_roster_and_opt_out(client):
+    c = client.post("/api/matches", json={"home": "A", "away": "B"}).json()
+    admin = {"X-Token": c["admin_token"]}
+    viewer = {"X-Token": client.post("/api/join", json={"code": c["match"]["code"]}).json()["token"]}
+    r = client.post("/api/roster", json={"team": "home", "number": "17", "name": "Elsa"}, headers=admin)
+    assert r.status_code == 201
+    rid = r.json()["id"]
+    r2 = client.post("/api/roster", json={"team": "home", "number": "9", "name": "Noa", "opted_out": True}, headers=admin).json()
+    # viewers never see opted-out players, nor the flag itself
+    names = client.get("/api/roster", headers=viewer).json()
+    assert [x["name"] for x in names] == ["Elsa"] and "opted_out" not in names[0]
+    # admin sees everyone and can flip the flag
+    assert len(client.get("/api/roster", headers=admin).json()) == 2
+    assert client.patch(f"/api/roster/{r2['id']}", json={"opted_out": False}, headers=admin).json()["opted_out"] == 0
+    assert client.patch(f"/api/roster/{rid}", json={"player_id": 3}, headers=admin).json()["player_id"] == 3
+    assert client.patch(f"/api/roster/{rid}", json={"player_id": 0}, headers=admin).json()["player_id"] is None
+    assert client.patch(f"/api/roster/{rid}", json={"name": "X"}, headers=viewer).status_code == 403
+    assert client.delete(f"/api/roster/{rid}", headers=admin).status_code == 204

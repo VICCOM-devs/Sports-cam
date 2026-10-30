@@ -145,6 +145,16 @@ def test_full_match_flow(hub):
         viewer.wait_for_selector("#players .prow", timeout=25000)
         viewer.screenshot(path=str(SHOTS / "viewer-players.png"))
 
+        # --- scorekeeper manages the roster and opts a player out
+        sk.click('#tabs [data-pane="players"]')
+        sk.wait_for_selector("#rosterbox:not(.hidden)")
+        sk.fill("#r-num", "17"); sk.fill("#r-name", "Elsa Lindqvist"); sk.click("#rosterform button")
+        sk.wait_for_selector(".rrow")
+        sk.click('.rrow [data-a="out"]')
+        sk.wait_for_selector(".rrow.out")
+        sk.screenshot(path=str(SHOTS / "scorekeeper-roster.png"))
+        assert viewer.evaluate("fetch('/api/roster',{headers:{'X-Token':JSON.parse(localStorage.getItem('sportscam.session')).token}}).then(r=>r.json()).then(j=>j.length)") == 0
+
         # --- end match from lobby; recording file exists
         lobby.click("#end")
         viewer.wait_for_function("document.querySelector('#livebadge').classList.contains('hidden')", timeout=10000)

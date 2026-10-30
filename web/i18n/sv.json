@@ -115,5 +115,15 @@
   "view.clips.build": "Skapa klipp",
   "view.clips.empty": "Inga klipp än. Klipp skapas av taggarna när matchen avslutas.",
   "view.auto": "Auto",
-  "view.auto.hint": "bästa vinkeln"
+  "view.auto.hint": "bästa vinkeln",
+  "roster.title": "Spelare i laget",
+  "roster.hint": "Lägg till namn och nummer. Tryck på en prick på rinken för att koppla den till en spelare. Spelare som avböjt får varken namn, statistik eller klipp.",
+  "roster.number": "Nr",
+  "roster.name": "Namn",
+  "roster.add": "Lägg till",
+  "roster.linked": "kopplad till prick",
+  "roster.unlinked": "ej kopplad",
+  "roster.optout": "Avböj spårning",
+  "roster.optin": "Spåra igen",
+  "roster.whois": "Vem är prick"
 }

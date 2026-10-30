@@ -61,6 +61,16 @@ CREATE TABLE IF NOT EXISTS events (
   by_token TEXT
 );
 CREATE INDEX IF NOT EXISTS events_match ON events(match_id, id);
+CREATE TABLE IF NOT EXISTS roster (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  match_id TEXT NOT NULL,
+  team TEXT NOT NULL,              -- home | away
+  number TEXT,
+  name TEXT NOT NULL,
+  opted_out INTEGER NOT NULL DEFAULT 0,
+  player_id INTEGER               -- fused tracking player currently linked, if any
+);
+CREATE INDEX IF NOT EXISTS roster_match ON roster(match_id);
 """
 
 
@@ -187,3 +197,26 @@ class Database:
                 d.pop("by_token", None)
                 out.append(d)
             return out
+
+    # -- roster --------------------------------------------------------------
+    def roster(self, match_id: str) -> list[dict]:
+        with self.conn() as c:
+            rows = c.execute("SELECT * FROM roster WHERE match_id=? ORDER BY team, number, name", (match_id,)).fetchall()
+            return [dict(r) for r in rows]
+
+    def add_roster(self, match_id: str, team: str, number: str | None, name: str, opted_out: bool) -> dict:
+        with self.conn() as c:
+            cur = c.execute("INSERT INTO roster (match_id, team, number, name, opted_out) VALUES (?,?,?,?,?)",
+                            (match_id, team, number, name, int(opted_out)))
+            return dict(c.execute("SELECT * FROM roster WHERE id=?", (cur.lastrowid,)).fetchone())
+
+    def update_roster(self, rid: int, **fields: Any) -> dict | None:
+        sets = ", ".join(f"{k}=?" for k in fields)
+        with self.conn() as c:
+            c.execute(f"UPDATE roster SET {sets} WHERE id=?", [*fields.values(), rid])
+            r = c.execute("SELECT * FROM roster WHERE id=?", (rid,)).fetchone()
+            return dict(r) if r else None
+
+    def delete_roster(self, rid: int) -> None:
+        with self.conn() as c:
+            c.execute("DELETE FROM roster WHERE id=?", (rid,))

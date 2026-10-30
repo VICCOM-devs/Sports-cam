@@ -120,7 +120,7 @@ class Fusion:
     def stats(self) -> list[dict]:
         out = []
         for p in self.players.values():
-            if len(p.path) < 10:
+            if len(p.path) < 10 or p.opted_out:
                 continue
             out.append({"id": p.id, "label": p.label, "team": p.team, "distance_m": round(p.distance_m),
                         "top_speed_kmh": round(p.top_speed_kmh, 1),

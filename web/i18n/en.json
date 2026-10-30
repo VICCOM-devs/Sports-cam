@@ -115,5 +115,15 @@
   "view.clips.build": "Build clips",
   "view.clips.empty": "No clips yet. Clips are cut from the tags when the game ends.",
   "view.auto": "Auto",
-  "view.auto.hint": "best angle"
+  "view.auto.hint": "best angle",
+  "roster.title": "Team roster",
+  "roster.hint": "Add names and numbers. Tap a dot on the rink to link it to a player. Opted-out players get no name, stats or clips.",
+  "roster.number": "No.",
+  "roster.name": "Name",
+  "roster.add": "Add",
+  "roster.linked": "linked to dot",
+  "roster.unlinked": "not linked",
+  "roster.optout": "Opt out of tracking",
+  "roster.optin": "Track again",
+  "roster.whois": "Who is dot"
 }

@@ -199,6 +199,14 @@ class VisionService:
             if len(mv.director_log) > 5000:
                 del mv.director_log[:-5000]
 
+    def label_player(self, match_id: str, player_id: int, label: str | None, opted_out: bool) -> bool:
+        mv = self.matches.get(match_id)
+        p = mv.fusion.players.get(player_id) if mv else None
+        if not p:
+            return False
+        p.label, p.opted_out = label, opted_out
+        return True
+
     def positions(self, match_id: str) -> list[dict]:
         mv = self.matches.get(match_id)
         return mv.fusion.snapshot() if mv else []
