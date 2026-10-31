@@ -5,3 +5,8 @@ hub/bin/
 tests/screenshots/
 .pytest_cache/
 *.sqlite
+ml/data/
+ml/runs/
+ml/synthetic/
+*.onnx
+*.pt

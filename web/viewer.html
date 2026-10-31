@@ -22,6 +22,8 @@
   .ov .trail { fill: none; stroke-width: 4; stroke-linecap: round; stroke-linejoin: round; opacity: .8; }
   .ov .shape { fill: none; stroke-width: 3; opacity: .7; stroke-linejoin: round; }
   .ov .spd { font: 800 14px var(--font); fill: #fff; paint-order: stroke; stroke: #000; stroke-width: 3px; text-anchor: middle; }
+  .ov .puck { fill: none; stroke: var(--accent); stroke-width: 3; filter: drop-shadow(0 0 6px var(--accent)); }
+  .ov .ring.goalie { stroke-dasharray: 6 4; }
   .player .ovbtn { position: absolute; left: var(--s3); bottom: calc(var(--s3) + 44px); min-height: 36px; padding: 0 12px; font-size: 12px; }
   .player .ovbtn.on { border-color: var(--accent); background: var(--accent-soft); color: var(--accent); }
   .player .zoom { position: absolute; right: var(--s3); bottom: var(--s3); min-height: 36px; padding: 0 12px; font-size: 12px; }
@@ -345,7 +347,7 @@ setOvMode(ovMode);
 function pushOverlay(data) {
   const o = data.overlay?.[current];
   if (!o) return;
-  ovFrames.push({ t: o.t * 1000, size: o.size, tracks: o.tracks, recv: performance.now() });
+  ovFrames.push({ t: o.t * 1000, size: o.size, tracks: o.tracks, puck: o.puck, recv: performance.now() });
   if (ovFrames.length > 12) ovFrames.shift();
 }
 function layoutOverlay(size) {
@@ -389,7 +391,7 @@ function renderOverlay() {
     const [x1, y1, x2, y2] = x.box, bw = Math.max(20, x2 - x1), col = teamColor(x.team);
     const rx = Math.min(bw * 0.7, f0.size[0] * 0.06), ry = rx * 0.32, sel = x.pid != null && x.pid === selected;
     if (ovMode === 2 && x.trail?.length > 2 && !x.trail.some(Number.isNaN)) svg += `<polyline class="trail" stroke="${col}" points="${x.trail.map((p) => p.join(",")).join(" ")}" opacity="${sel ? .95 : .35}"/>`;
-    svg += `<ellipse class="ring ${sel ? "sel" : ""}" cx="${x.foot[0]}" cy="${x.foot[1]}" rx="${rx}" ry="${ry}" stroke="${col}" fill="${col}"/>`;
+    svg += `<ellipse class="ring ${sel ? "sel" : ""} ${x.role === "goaltender" ? "goalie" : ""}" cx="${x.foot[0]}" cy="${x.foot[1]}" rx="${rx}" ry="${ry}" stroke="${col}" fill="${col}"/>`;
     svg += `<rect class="hit" x="${x1}" y="${y1}" width="${bw}" height="${y2 - y1}" data-pid="${x.pid ?? ""}"/>`;
     if (x.label || sel) {
       const txt = x.label || `#${x.pid}`; const sub = x.speed != null ? `${x.speed} km/h · ${x.dist} m` : "";
@@ -399,6 +401,8 @@ function renderOverlay() {
       svg += `<text class="spd" x="${(x1 + x2) / 2}" y="${y1 - 8}">${x.speed} km/h</text>`;
     }
   }
+  const pk = f1?.puck || f0.puck;
+  if (pk) svg += `<circle class="puck" cx="${pk[0]}" cy="${pk[1]}" r="${Math.max(10, f0.size[0] * 0.012)}"/>`;
   ovSvg.innerHTML = svg;
 }
 function esc(s) { return String(s).replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c])); }

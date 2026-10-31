@@ -36,7 +36,7 @@ export async function api(path, { method = "GET", body, token, raw } = {}) {
   }
   if (!r.ok) {
     let detail = r.statusText;
-    try { detail = (await r.json()).detail || detail; } catch { /* keep */ }
+    try { const d = (await r.json()).detail; detail = typeof d === "string" ? d : JSON.stringify(d); } catch { /* keep */ }
     throw new ApiError(r.status, detail);
   }
   if (r.status === 204) return null;

@@ -206,4 +206,15 @@ def test_full_match_flow(hub):
         viewer.screenshot(path=str(SHOTS / "viewer-clips.png"))
         clips = list((hub["data"] / "recordings" / code / "clips").glob("*.mp4"))
         assert clips and all(c.stat().st_size > 1000 for c in clips)
+
+        # --- labelling tool on the hub: frame loads with suggestions, save writes YOLO txt + jpg
+        lab = browser.new_context(viewport={"width": 1200, "height": 800}, locale="en-US").new_page()
+        lab.goto(f"{base}/label.html"); lab.wait_for_selector("body[data-ready]")
+        lab.wait_for_function("document.getElementById('img').naturalWidth > 0", timeout=15000)
+        lab.wait_for_function("document.querySelectorAll('#ov .bx').length >= 1", timeout=10000)
+        lab.click("#accept"); lab.click("#save")
+        lab.wait_for_function("document.getElementById('count').textContent === '1'", timeout=10000)
+        lab.screenshot(path=str(SHOTS / "label.png"))
+        labels = list((hub["data"] / "recordings" / code / "labels").glob("*.txt"))
+        assert labels and labels[0].read_text().strip().startswith("0 ")
         browser.close()

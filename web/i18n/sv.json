@@ -134,5 +134,20 @@
   "lobby.external.ok": "Källan är ansluten",
   "view.ov.off": "Grafik av",
   "view.ov.rings": "Ringar",
-  "view.ov.full": "Full grafik"
+  "view.ov.full": "Full grafik",
+  "label.title": "Märk upp bilder",
+  "label.hint": "Modellens förslag visas streckade. Dra för att rita en ruta, klicka på en ruta och tryck 1–7 för att byta klass. Spara när bilden stämmer. Bilderna hamnar i mappen labels och kan tränas på med ml/prepare_data.py.",
+  "label.accept": "Godkänn förslag",
+  "label.delete": "Ta bort ruta",
+  "label.save": "Spara bild",
+  "label.keys.class": "klass",
+  "label.keys.delete": "ta bort",
+  "label.keys.save": "spara",
+  "label.keys.next": "nästa sekund",
+  "label.classes": "Klasser",
+  "label.progress": "Sparade bilder",
+  "label.export": "Träna: python ml/prepare_data.py --extra <labels-mappen>",
+  "label.saved": "Sparat rutor:",
+  "label.norec": "Inga inspelningar än. Spela in en match först.",
+  "lobby.label": "Märk upp träningsdata"
 }

@@ -1,0 +1,147 @@
+<!doctype html>
+<html lang="sv" data-build="{{BUILD}}">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="theme-color" content="#0A0C10">
+<title>AnySport – Label</title>
+<link rel="stylesheet" href="/css/tokens.css?v={{BUILD}}">
+<link rel="stylesheet" href="/css/app.css?v={{BUILD}}">
+<style>
+  .grid { display: grid; grid-template-columns: 1fr 300px; gap: var(--s4); align-items: start; }
+  .frame { position: relative; background: #000; border-radius: var(--r-card); overflow: hidden; user-select: none; }
+  .frame img { display: block; width: 100%; }
+  .frame svg { position: absolute; inset: 0; width: 100%; height: 100%; }
+  .bx { fill: none; stroke-width: 2; cursor: move; }
+  .bx.sel { stroke-width: 3; filter: drop-shadow(0 0 4px #fff); }
+  .bx.sug { stroke-dasharray: 5 4; opacity: .7; }
+  .lbl { font: 700 11px var(--font); fill: #fff; paint-order: stroke; stroke: #000; stroke-width: 3px; }
+  .cls { display: grid; grid-template-columns: 1fr 1fr; gap: var(--s2); }
+  .cls .btn { min-height: 44px; font-size: var(--small); justify-content: flex-start; gap: 8px; }
+  .cls .btn.on { border-color: var(--accent); background: var(--accent-soft); }
+  .dot { width: 10px; height: 10px; border-radius: 50%; }
+  kbd { background: var(--surface-3); border-radius: 4px; padding: 1px 6px; font-size: 11px; }
+  .scrub { width: 100%; }
+</style>
+</head>
+<body>
+<header class="topbar">
+  <a class="btn ghost" style="min-height:40px;padding:0 12px" href="/lobby.html" data-i18n="back"></a>
+  <span class="brand">Any<span>Sport</span></span>
+  <span class="chip faint" id="model"></span>
+  <span class="grow"></span>
+  <select id="rec" class="input" style="width: auto; min-height: 40px"></select>
+  <select id="file" class="input" style="width: auto; min-height: 40px"></select>
+</header>
+<main class="wrap wide stack">
+  <div>
+    <h1 data-i18n="label.title"></h1>
+    <p class="dim" data-i18n="label.hint"></p>
+  </div>
+  <div class="grid">
+    <div class="stack">
+      <div class="frame" id="frame"><img id="img" alt=""><svg id="ov"></svg></div>
+      <input type="range" id="scrub" class="scrub" min="0" max="100" step="0.5" value="0">
+      <div class="row" style="flex-wrap: wrap">
+        <button class="btn" id="prev">◀ 1 s</button>
+        <button class="btn" id="next">1 s ▶</button>
+        <button class="btn" id="jump">+10 s ▶▶</button>
+        <span class="chip mono" id="time">0.0 s</span>
+        <span class="grow"></span>
+        <button class="btn" id="accept" data-i18n="label.accept"></button>
+        <button class="btn danger" id="del" data-i18n="label.delete"></button>
+        <button class="btn primary" id="save" data-i18n="label.save"></button>
+      </div>
+      <p class="faint" style="font-size: var(--small)"><kbd>1</kbd>–<kbd>7</kbd> <span data-i18n="label.keys.class"></span> · <kbd>Del</kbd> <span data-i18n="label.keys.delete"></span> · <kbd>S</kbd> <span data-i18n="label.keys.save"></span> · <kbd>→</kbd> <span data-i18n="label.keys.next"></span></p>
+    </div>
+    <div class="stack">
+      <div class="card stack">
+        <div class="label" data-i18n="label.classes"></div>
+        <div class="cls" id="classes"></div>
+      </div>
+      <div class="card stack">
+        <div class="label" data-i18n="label.progress"></div>
+        <div class="display" id="count">0</div>
+        <p class="dim" style="font-size: var(--small)" id="dir"></p>
+        <p class="dim" style="font-size: var(--small)" data-i18n="label.export"></p>
+      </div>
+    </div>
+  </div>
+</main>
+<script type="module">
+import { loadI18n, t, api, haptic, toast } from "/js/core.js?v={{BUILD}}";
+await loadI18n();
+const $ = (id) => document.getElementById(id);
+const COLORS = { player: "#3DDCFF", goaltender: "#3DDC97", referee: "#FFB02E", puck: "#FF4D5E", goal: "#B38CFF", faceoff_dot: "#FF8CDA", center_ice: "#9AA3B2" };
+const v = await api("/api/version"); $("model").textContent = v.model || "–";
+const recs = await api("/api/label/recordings");
+for (const r of recs) { const o = document.createElement("option"); o.value = r.code; o.textContent = `${r.code} (${r.labelled})`; $("rec").appendChild(o); }
+function fillFiles() { const r = recs.find((x) => x.code === $("rec").value); $("file").innerHTML = ""; for (const f of r?.files || []) { const o = document.createElement("option"); o.value = f; o.textContent = f; $("file").appendChild(o); } }
+fillFiles(); $("rec").onchange = () => { fillFiles(); load(0); }; $("file").onchange = () => load(0);
+
+let frame = null, boxes = [], sel = -1, cls = "player", time = 0, saved = 0;
+const clsEl = $("classes");
+Object.keys(COLORS).forEach((c, i) => {
+  const b = document.createElement("button"); b.className = "btn" + (c === cls ? " on" : "");
+  b.innerHTML = `<span class="dot" style="background:${COLORS[c]}"></span><span>${i + 1} ${c}</span>`;
+  b.onclick = () => setCls(c); clsEl.appendChild(b);
+});
+function setCls(c) { cls = c; clsEl.querySelectorAll(".btn").forEach((b, i) => b.classList.toggle("on", Object.keys(COLORS)[i] === c)); if (sel >= 0) { boxes[sel].cls = c; draw(); } }
+
+async function load(tt) {
+  if (!$("file").value) return;
+  time = Math.max(0, tt);
+  try {
+    frame = await api(`/api/label/frame?code=${encodeURIComponent($("rec").value)}&file=${encodeURIComponent($("file").value)}&t=${time}`);
+  } catch (e) { toast(e.message); return; }
+  $("img").src = `data:image/jpeg;base64,${frame.jpeg}`;
+  $("scrub").max = Math.max(1, frame.duration.toFixed(1)); $("scrub").value = time; $("time").textContent = `${time.toFixed(1)} s`;
+  boxes = (frame.saved || frame.suggested).map((b) => ({ ...b, sug: !frame.saved }));
+  sel = -1; draw();
+}
+function draw() {
+  const W = frame.width, H = frame.height; const ov = $("ov"); ov.setAttribute("viewBox", `0 0 ${W} ${H}`);
+  let s = "";
+  boxes.forEach((b, i) => {
+    const x = (b.x - b.w / 2) * W, y = (b.y - b.h / 2) * H, w = b.w * W, h = b.h * H;
+    s += `<rect class="bx ${i === sel ? "sel" : ""} ${b.sug ? "sug" : ""}" data-i="${i}" x="${x}" y="${y}" width="${w}" height="${h}" stroke="${COLORS[b.cls] || "#fff"}"/><text class="lbl" x="${x + 3}" y="${y - 4}">${b.cls}${b.score ? " " + b.score : ""}</text>`;
+  });
+  ov.innerHTML = s;
+  ov.querySelectorAll(".bx").forEach((r) => (r.onpointerdown = (e) => { e.stopPropagation(); sel = Number(r.dataset.i); draw(); startDrag(e, "move"); }));
+}
+// draw new box by dragging on empty space; move by dragging a box
+let drag = null;
+const toImg = (e) => { const r = $("img").getBoundingClientRect(); return [(e.clientX - r.left) / r.width, (e.clientY - r.top) / r.height]; };
+$("frame").onpointerdown = (e) => { const [x, y] = toImg(e); drag = { mode: "new", x0: x, y0: y }; boxes.push({ cls, x, y, w: 0, h: 0 }); sel = boxes.length - 1; };
+function startDrag(e, mode) { const [x, y] = toImg(e); drag = { mode, x0: x, y0: y, bx: boxes[sel].x, by: boxes[sel].y }; }
+window.onpointermove = (e) => {
+  if (!drag || sel < 0) return; const [x, y] = toImg(e); const b = boxes[sel];
+  if (drag.mode === "new") { b.x = (x + drag.x0) / 2; b.y = (y + drag.y0) / 2; b.w = Math.abs(x - drag.x0); b.h = Math.abs(y - drag.y0); }
+  else { b.x = drag.bx + (x - drag.x0); b.y = drag.by + (y - drag.y0); }
+  b.sug = false; draw();
+};
+window.onpointerup = () => { if (drag?.mode === "new" && sel >= 0 && boxes[sel].w < 0.004) { boxes.splice(sel, 1); sel = -1; draw(); } drag = null; };
+
+$("prev").onclick = () => load(time - 1); $("next").onclick = () => load(time + 1); $("jump").onclick = () => load(time + 10);
+$("scrub").onchange = () => load(Number($("scrub").value));
+$("accept").onclick = () => { boxes.forEach((b) => (b.sug = false)); draw(); };
+$("del").onclick = () => { if (sel >= 0) { boxes.splice(sel, 1); sel = -1; draw(); } };
+$("save").onclick = async () => {
+  haptic("medium");
+  const keep = boxes.filter((b) => !b.sug && b.w > 0.004);
+  try { const r = await api("/api/label/save", { method: "POST", body: { code: $("rec").value, key: frame.key, width: frame.width, height: frame.height, jpeg: frame.jpeg, boxes: keep } }); saved++; $("count").textContent = saved; $("dir").textContent = r.dir; toast(`${t("label.saved")} ${r.saved}`); load(time + 1); }
+  catch (e) { toast(e.message); }
+};
+window.onkeydown = (e) => {
+  if (e.target.tagName === "SELECT") return;
+  const k = Object.keys(COLORS)[Number(e.key) - 1]; if (k) setCls(k);
+  if (e.key === "Delete" || e.key === "Backspace") $("del").click();
+  if (e.key.toLowerCase() === "s") $("save").click();
+  if (e.key === "ArrowRight") $("next").click(); if (e.key === "ArrowLeft") $("prev").click();
+  if (e.key.toLowerCase() === "a") $("accept").click();
+};
+if (recs.length) load(0); else toast(t("label.norec"));
+document.body.dataset.ready = "1";
+</script>
+</body>
+</html>

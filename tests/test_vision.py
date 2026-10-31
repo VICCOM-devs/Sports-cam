@@ -89,3 +89,19 @@ def test_fusion_merges_cameras_and_measures_speed():
     # an observation far outside the rink is ignored
     f.step([Observation("camA", 2, 80, 80, None, 6.0)], 6.0)
     assert len(f.players) == 1
+
+
+def test_custom_model_loads_and_reports_classes(tmp_path):
+    """A hub-exported multi-class model (from ml/) loads through the same detector and tags classes."""
+    import shutil
+    src = Path("/tmp/anysport-test.onnx")
+    if not src.exists():
+        pytest.skip("no exported test model")
+    shutil.copy(src, tmp_path / "custom.onnx"); shutil.copy(src.with_suffix(".json"), tmp_path / "custom.json")
+    det = PersonDetector.load(tmp_path, "nano", conf=0.2)
+    assert det.name == "custom" and det.classes[3] == "puck"
+    import subprocess, sys as _s
+    subprocess.run([_s.executable, str(ROOT / "ml/make_synthetic.py"), "--out", str(tmp_path / "syn"), "--n", "2", "--size", "320"], check=True, cwd=ROOT / "ml")
+    img = cv2.imread(str(tmp_path / "syn/images/syn_0000.jpg"))
+    dets = det(img)
+    assert dets and {d.cls for d in dets} & {"player", "goal", "faceoff_dot"}

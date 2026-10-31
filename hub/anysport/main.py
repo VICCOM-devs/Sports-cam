@@ -246,6 +246,15 @@ class TeamMapBody(BaseModel):
     B: Literal["home", "away"]
 
 
+class LabelBody(BaseModel):
+    code: str
+    key: str
+    width: int
+    height: int
+    jpeg: str
+    boxes: list[dict]
+
+
 class ExternalCamera(BaseModel):
     label: str = Field(min_length=1, max_length=40)
     url: str = Field(min_length=4, max_length=500)
@@ -294,6 +303,7 @@ def register_routes(app: FastAPI, hub: Hub) -> None:
             "product": version.PRODUCT, "display_name": version.DISPLAY_NAME,
             "semver": version.SEMVER, "build": version.BUILD_NUMBER,
             "channel": version.CHANNEL, "media": hub.media.name,
+            "model": hub.vision.detector.name if hub.vision.detector else None,
             "secure_url": hub.public_url(True),
             "update": hub.updates.state,
         }
@@ -603,6 +613,81 @@ def register_routes(app: FastAPI, hub: Hub) -> None:
         hub.db.delete_roster(rid)
         return Response(status_code=204)
 
+    # -- labelling (hub console only): frames from recordings, model suggestions, YOLO export
+    LABEL_CLASSES = ["player", "goaltender", "referee", "puck", "goal", "faceoff_dot", "center_ice"]
+
+    def _labels_dir(code: str) -> Path:
+        return hub.cfg.recordings_dir / code / "labels"
+
+    @app.get("/api/label/recordings")
+    async def label_recordings(request: Request):
+        if not is_local(request):
+            raise HTTPException(403, "labelling is done on the hub")
+        out = []
+        for d in sorted(hub.cfg.recordings_dir.iterdir()) if hub.cfg.recordings_dir.exists() else []:
+            if not d.is_dir():
+                continue
+            vids = sorted(p.name for p in d.glob("*.mkv")) + sorted(p.name for p in d.glob("*.mp4"))
+            if vids:
+                n_lab = len(list((d / "labels").glob("*.txt"))) if (d / "labels").exists() else 0
+                out.append({"code": d.name, "files": vids, "labelled": n_lab})
+        return out
+
+    @app.get("/api/label/frame")
+    async def label_frame(request: Request, code: str, file: str, t: float = 0.0):
+        """One JPEG frame at t seconds + the model's suggested boxes (normalized)."""
+        import cv2
+
+        if not is_local(request):
+            raise HTTPException(403, "labelling is done on the hub")
+        path = hub.cfg.recordings_dir / Path(code).name / Path(file).name
+        if not path.exists():
+            raise HTTPException(404, "no such recording")
+        cap = cv2.VideoCapture(str(path))
+        cap.set(cv2.CAP_PROP_POS_MSEC, max(0.0, t) * 1000)
+        ok, frame = cap.read()
+        dur = cap.get(cv2.CAP_PROP_FRAME_COUNT) / max(cap.get(cv2.CAP_PROP_FPS) or 25, 1)
+        cap.release()
+        if not ok:
+            raise HTTPException(404, "no frame at that time")
+        h, w = frame.shape[:2]
+        boxes = []
+        if hub.vision.detector:
+            for d in hub.vision.detector(frame):
+                boxes.append({"cls": d.cls, "x": (d.x1 + d.x2) / 2 / w, "y": (d.y1 + d.y2) / 2 / h,
+                              "w": (d.x2 - d.x1) / w, "h": (d.y2 - d.y1) / h, "score": round(d.score, 2)})
+        key = f"{Path(file).stem}_{int(t * 1000):08d}"
+        saved = _labels_dir(code) / f"{key}.txt"
+        existing = None
+        if saved.exists():
+            existing = []
+            for line in saved.read_text().splitlines():
+                c, x, y, bw, bh = line.split()[:5]
+                existing.append({"cls": LABEL_CLASSES[int(c)], "x": float(x), "y": float(y), "w": float(bw), "h": float(bh)})
+        ok, buf = cv2.imencode(".jpg", frame, [cv2.IMWRITE_JPEG_QUALITY, 88])
+        import base64
+        return {"key": key, "width": w, "height": h, "duration": dur, "jpeg": base64.b64encode(buf.tobytes()).decode(),
+                "suggested": boxes, "saved": existing, "classes": LABEL_CLASSES}
+
+    @app.post("/api/label/save")
+    async def label_save(body: LabelBody, request: Request):
+        """Save corrected boxes as YOLO txt + the frame as jpg → ready for ml/prepare_data.py --extra."""
+        import base64
+
+        if not is_local(request):
+            raise HTTPException(403, "labelling is done on the hub")
+        d = _labels_dir(Path(body.code).name)
+        (d / "images").mkdir(parents=True, exist_ok=True)
+        key = Path(body.key).name
+        lines = []
+        for b in body.boxes:
+            if b.get("cls") not in LABEL_CLASSES:
+                continue
+            lines.append(f"{LABEL_CLASSES.index(b['cls'])} {b['x']:.6f} {b['y']:.6f} {b['w']:.6f} {b['h']:.6f}")
+        (d / f"{key}.txt").write_text("\n".join(lines))
+        (d / "images" / f"{key}.jpg").write_bytes(base64.b64decode(body.jpeg))
+        return {"saved": len(lines), "dir": str(d)}
+
     # -- clips
     @app.get("/api/clips")
     async def list_clips(dep=Depends(auth("viewer"))):
@@ -702,7 +787,7 @@ def register_routes(app: FastAPI, hub: Hub) -> None:
             return HTMLResponse(html, headers={"Cache-Control": "no-cache"})
         return handler
 
-    for name in ("index.html", "camera.html", "viewer.html", "lobby.html", "calibrate.html"):
+    for name in ("index.html", "camera.html", "viewer.html", "lobby.html", "calibrate.html", "label.html"):
         app.get(f"/{name}", include_in_schema=False)(page(name))
     app.get("/", include_in_schema=False)(page("index.html"))
 

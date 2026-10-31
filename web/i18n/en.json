@@ -134,5 +134,20 @@
   "lobby.external.ok": "Source connected",
   "view.ov.off": "Graphics off",
   "view.ov.rings": "Rings",
-  "view.ov.full": "Full graphics"
+  "view.ov.full": "Full graphics",
+  "label.title": "Label frames",
+  "label.hint": "The model's suggestions are dashed. Drag to draw a box, click a box and press 1–7 to change its class. Save when the frame is right. Frames land in the labels folder and train with ml/prepare_data.py.",
+  "label.accept": "Accept suggestions",
+  "label.delete": "Delete box",
+  "label.save": "Save frame",
+  "label.keys.class": "class",
+  "label.keys.delete": "delete",
+  "label.keys.save": "save",
+  "label.keys.next": "next second",
+  "label.classes": "Classes",
+  "label.progress": "Saved frames",
+  "label.export": "Train: python ml/prepare_data.py --extra <labels folder>",
+  "label.saved": "Saved boxes:",
+  "label.norec": "No recordings yet. Record a game first.",
+  "lobby.label": "Label training data"
 }

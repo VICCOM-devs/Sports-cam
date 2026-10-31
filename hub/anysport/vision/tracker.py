@@ -35,6 +35,7 @@ class Track:
     score: float = 0.0
     color: np.ndarray | None = None       # jersey colour feature (set by teams.py)
     team: str | None = None
+    role: str = "player"                  # player | goaltender | referee (from a multi-class model)
     history: list[tuple[float, float]] = field(default_factory=list)
 
     @property

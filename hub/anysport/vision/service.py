@@ -42,6 +42,9 @@ class CameraWorker:
     frame_size: tuple[int, int] = (0, 0)
     crop: list[float] | None = None     # normalized [x, y, w, h] around the play, smoothed
     overlay: list[dict] = field(default_factory=list)   # per-track drawing data in image pixels
+    puck: tuple[float, float, float] | None = None      # (x, y, score) in image px, last seen
+    puck_t: float = 0.0
+    rink_marks: list[dict] = field(default_factory=list) # detected goals / faceoff dots (for calibration hints)
 
 
 @dataclass
@@ -76,6 +79,7 @@ def _overlay_entries(mv: MatchVision, w: CameraWorker, tracks) -> list[dict]:
         if p is not None and p.opted_out:
             continue
         e = {"tid": tr.id, "box": [x1, y1, x2, y2], "foot": [round(fx), round(fy)], "team": tr.team,
+             "role": getattr(tr, "role", "player"),
              "trail": [[round(a), round(b)] for a, b in tr.history[-12:]]}
         if p is not None:
             e.update({"pid": p.id, "label": p.label, "speed": round(p.speed_kmh), "dist": round(p.distance_m)})
@@ -195,6 +199,8 @@ class VisionService:
             "players": len(mv.fusion.players),
             "teams_ready": mv.teams.centers is not None,
             "team_map": mv.teams.mapping,
+            "model": self.detector.name if self.detector else None,
+            "classes": self.detector.classes if self.detector else None,
         }
 
     def director(self, match_id: str) -> str | None:
@@ -274,15 +280,32 @@ class VisionService:
         n, t0 = 0, time.time()
         try:
             async for t, frame in self.media.frames(w.path, fps=self.fps):
-                dets = await loop.run_in_executor(self.pool, self.detector, frame)
-                w.detections += len(dets)
+                dets_all = await loop.run_in_executor(self.pool, self.detector, frame)
+                w.detections += len(dets_all)
+                dets = [d for d in dets_all if d.cls in ("player", "goaltender", "referee")]
+                pucks = [d for d in dets_all if d.cls == "puck"]
+                if pucks:
+                    best = max(pucks, key=lambda d: d.score)
+                    w.puck, w.puck_t = ((best.x1 + best.x2) / 2, (best.y1 + best.y2) / 2, best.score), t
+                marks = [d for d in dets_all if d.cls in ("goal", "faceoff_dot", "center_ice")]
+                if marks and n % 25 == 0:
+                    w.rink_marks = [{"cls": d.cls, "box": [round(d.x1), round(d.y1), round(d.x2), round(d.y2)], "score": round(d.score, 2)} for d in marks]
+                cls_by_box = {(round(d.x1), round(d.y1)): d.cls for d in dets}
                 tracks = w.tracker.step(dets)
+                for tr in tracks:
+                    c = cls_by_box.get((round(tr.box[0]), round(tr.box[1])))
+                    if c in ("goaltender", "referee"):
+                        tr.role = c
+                    elif c == "player":
+                        tr.role = "player"
                 obs = []
                 for tr in tracks:
                     feat = torso_feature(frame, tr.box)
-                    if feat is not None:
+                    if getattr(tr, "role", "player") == "referee":
+                        tr.team = "ref"
+                    elif feat is not None:
                         tr.color = feat
-                        if mv.teams.centers is None and len(mv.feats) < 400:
+                        if mv.teams.centers is None and len(mv.feats) < 400 and getattr(tr, "role", "player") == "player":
                             mv.feats.append(feat)
                         key = mv.teams.cluster(feat)
                         tr.team = mv.teams.mapping.get(key, key) if key else None
@@ -328,7 +351,8 @@ class VisionService:
                                            {"t": now, "players": mv.fusion.snapshot(), "director": mv.director_cam,
                                             "crops": {cid: [round(v, 3) for v in w.crop] for cid, w in mv.workers.items()
                                                       if w.crop and now - w.last_frame_t < 2},
-                                            "overlay": {cid: {"t": w.last_frame_t, "size": w.frame_size, "tracks": w.overlay}
+                                            "overlay": {cid: {"t": w.last_frame_t, "size": w.frame_size, "tracks": w.overlay,
+                                                              "puck": [round(w.puck[0]), round(w.puck[1])] if w.puck and now - w.puck_t < 1.0 else None}
                                                         for cid, w in mv.workers.items() if now - w.last_frame_t < 2}})
         except asyncio.CancelledError:
             pass
