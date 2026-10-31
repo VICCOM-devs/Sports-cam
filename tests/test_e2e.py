@@ -80,6 +80,7 @@ def test_full_match_flow(hub):
         cam.click('button[data-role="camera"]')
         cam.wait_for_url("**/camera.html*")
         cam.wait_for_selector("#start")
+        cam.wait_for_function("document.querySelectorAll('#positions .btn').length === 8")
         cam.screenshot(path=str(SHOTS / "camera-setup.png"))
         cam.click("#start")
         cam.wait_for_function("!document.getElementById('live').classList.contains('hidden') && document.getElementById('state').classList.contains('live')", timeout=15000)
@@ -112,6 +113,7 @@ def test_full_match_flow(hub):
 
         # lobby shows the camera as live and the viewer count
         lobby.wait_for_function("document.querySelector('#cams .chip.live') !== null", timeout=10000)
+        lobby.wait_for_function("document.querySelectorAll('#covmap .cam.on').length === 1", timeout=10000)
         lobby.screenshot(path=str(SHOTS / "lobby-live.png"))
 
         # --- calibration page: snapshot loads, tap 5 landmarks, save → overlay drawn

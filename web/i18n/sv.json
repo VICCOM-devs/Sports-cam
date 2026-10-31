@@ -149,5 +149,6 @@
   "label.export": "Träna: python ml/prepare_data.py --extra <labels-mappen>",
   "label.saved": "Sparat rutor:",
   "label.norec": "Inga inspelningar än. Spela in en match först.",
-  "lobby.label": "Märk upp träningsdata"
+  "lobby.label": "Märk upp träningsdata",
+  "lobby.coverage": "A–D: hörn ovanpå glaset (4 kameror). E–F: sidor vid blålinjen, högt (6). G–H: bakom målen, högt (8). Gröna = anslutna."
 }

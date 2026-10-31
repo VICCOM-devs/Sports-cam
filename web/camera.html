@@ -16,7 +16,7 @@
   .hud { display: flex; gap: var(--s2); align-items: center; flex-wrap: wrap; }
   .panel { background: rgba(10,12,16,.82); backdrop-filter: blur(12px); border: 1px solid var(--stroke); border-radius: var(--r-sheet); padding: var(--s4); }
   .positions { display: grid; grid-template-columns: repeat(2, 1fr); gap: var(--s2); }
-  .positions .btn { min-height: 48px; font-size: var(--small); }
+  .positions .btn { min-height: 52px; font-size: var(--small); justify-content: flex-start; padding: 0 12px; }
   .positions .btn.on { border-color: var(--accent); background: var(--accent-soft); }
   .rec { display: inline-flex; align-items: center; gap: 8px; font-weight: 800; letter-spacing: .08em; color: var(--danger); }
   .rec::before { content: ""; width: 12px; height: 12px; border-radius: 50%; background: var(--danger); animation: pulse 1.2s infinite; }
@@ -57,7 +57,7 @@
 </div>
 
 <script type="module">
-import { loadI18n, t, api, session, saveSession, codeFromUrl, haptic, toast, updateGate, ApiError } from "/js/core.js?v={{BUILD}}";
+import { loadI18n, t, lang, api, session, saveSession, codeFromUrl, haptic, toast, updateGate, ApiError } from "/js/core.js?v={{BUILD}}";
 import { publish } from "/js/rtc.js?v={{BUILD}}";
 import { connectLive } from "/js/live.js?v={{BUILD}}";
 await loadI18n();
@@ -76,13 +76,17 @@ if (!sess || sess.role !== "camera" || (code && sess.code !== code)) {
 }
 if (!window.isSecureContext) $("insecure").classList.remove("hidden");
 
-// positions
-const POS = ["cornerA", "cornerB", "cornerC", "cornerD", "center", "goalHome", "goalAway"];
-let position = localStorage.getItem("anysport.position") || "cornerA";
+// positions: the rink's camera layout (A–D corners on the glass, E–F sides, G–H behind goals)
+const layout = (await api("/api/rink").catch(() => ({ camera_layout: [] }))).camera_layout || [];
+let position = localStorage.getItem("anysport.position") || "A";
 const posEl = $("positions");
-for (const p of POS) {
-  const b = document.createElement("button"); b.className = "btn" + (p === position ? " on" : ""); b.textContent = t(`cam.position.${p}`);
-  b.onclick = () => { position = p; localStorage.setItem("anysport.position", p); posEl.querySelectorAll(".btn").forEach((x) => x.classList.toggle("on", x === b)); haptic(); };
+const posName = (id) => { const l = layout.find((x) => x.id === id); return l ? (lang === "sv" ? l.name_sv : l.name_en) : id; };
+for (const l of layout) {
+  const b = document.createElement("button"); b.className = "btn" + (l.id === position ? " on" : "");
+  b.innerHTML = `<b style="margin-right:6px">${l.id}</b><span style="font-weight:400;font-size:12px;text-align:left;line-height:1.1"></span>`;
+  b.querySelector("span").textContent = lang === "sv" ? l.name_sv : l.name_en;
+  b.title = lang === "sv" ? l.mount_sv : l.mount_en;
+  b.onclick = () => { position = l.id; localStorage.setItem("anysport.position", l.id); posEl.querySelectorAll(".btn").forEach((x) => x.classList.toggle("on", x === b)); haptic(); };
   posEl.appendChild(b);
 }
 
@@ -122,7 +126,7 @@ async function goLive() {
   if (!stream) { await openCamera(); }
   setState("connecting");
   if (!camId) {
-    const r = await api("/api/cameras", { method: "POST", token: sess.token, body: { label: t(`cam.position.${position}`), position } });
+    const r = await api("/api/cameras", { method: "POST", token: sess.token, body: { label: `${position} · ${posName(position).split(" (")[0]}`, position } });
     camId = r.camera_id;
   }
   pub = await publish(camId, stream, sess.token);

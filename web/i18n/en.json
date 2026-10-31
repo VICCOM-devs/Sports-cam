@@ -149,5 +149,6 @@
   "label.export": "Train: python ml/prepare_data.py --extra <labels folder>",
   "label.saved": "Saved boxes:",
   "label.norec": "No recordings yet. Record a game first.",
-  "lobby.label": "Label training data"
+  "lobby.label": "Label training data",
+  "lobby.coverage": "A–D: corners on top of the glass (4 cameras). E–F: sides at the blue lines, high (6). G–H: behind the goals, high (8). Green = joined."
 }

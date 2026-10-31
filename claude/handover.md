@@ -3,7 +3,26 @@
 Read `viccom-studio` first. Spec of record: Claude Doc *Phase 1 Spec – Multi-Phone AnySportera
 System (Ice Hockey)* in the "Camera Project For Sports" project.
 
-## State (2026-10-30, afternoon)
+## State (2026-10-31)
+
+- **Free ML pipeline in `ml/`**: `prepare_data.py` (HockeyAI MIT dataset from Hugging Face → COCO,
+  plus `--extra` YOLO folders from the hub's labelling tool), `model.py` (our own Apache-2.0
+  YOLOX-style detector with a stride-4 level for the puck), `train.py` (SimOTA-lite, mosaic, mAP50
+  eval; `--model rtdetr-r18` via transformers as the alternative), `export.py` (ONNX + json sidecar),
+  `train_colab.ipynb`. Verified end to end on a synthetic set (player AP 0.98 after 30 CPU epochs);
+  **not yet trained on HockeyAI** – Hugging Face is blocked from Claude's workspace, so Victor runs
+  the notebook in Colab (free T4) or locally.
+- **Hub loads `models/custom.onnx` + `custom.json`** when present: classes player/goaltender/
+  referee/puck/goal/faceoff_dot/center_ice. Puck is drawn in the viewer overlay; referee role comes
+  from the model instead of grey-detection; rink marks are kept per camera (calibration hints, not
+  yet used in the UI).
+- **Labelling tool** `/label.html` (hub only): step through recordings, model suggestions, fix
+  boxes, save YOLO txt + jpg under `recordings/<code>/labels/`.
+- **Camera layout A–H** (Victor's drawing): A–D corners on the glass, E–F sides at the blue lines
+  high, G–H behind goals high. Camera page lists them; lobby shows a coverage map.
+- Pricing decided: club free; parents 3.99 €/month, 25 €/season (Sept–March), 90 € lifetime.
+
+## Earlier (2026-10-30)
 
 - **Repo**: `VICCOM-devs/anysport`, branch `main`. Everything below is pushed.
 - **M1–M3 built and tested** (12 tests, e2e in a real browser, stable over 6 consecutive runs):

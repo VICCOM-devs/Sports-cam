@@ -88,6 +88,7 @@ class RinkTemplate:
             "blue_line_x": self.blue_line_x, "goal_line_x": self.goal_line_x,
             "landmarks": [vars(l) for l in self.landmarks],
             "lines": self.lines(), "outline": self.outline(),
+            "camera_layout": CAMERA_LAYOUT,
         }
 
 
@@ -102,6 +103,21 @@ TEMPLATES = {
     "nhl": RinkTemplate("nhl", 60.96, 25.91, 8.53, blue_line_x=60.96 / 2 - 22.86, goal_line_x=60.96 / 2 - 3.35,
                         dot_x=60.96 / 2 - 3.35 - 6.1, dot_y=6.71, neutral_dot_x=60.96 / 2 - 22.86 - 1.52),
 }
+
+
+# Camera positions on a 60×30 rink. Red arrows in Victor's drawing = corners on top of the glass
+# (A–D); green = side cameras at the blue lines, higher, not through glass (E–F); G–H = behind
+# each goal, high (netting side). Tier 4 = A–D, tier 6 = + E–F, tier 8 = + G–H.
+CAMERA_LAYOUT = [
+    {"id": "A", "tier": 4, "x": -27.0, "y": 13.0, "z": 2.4, "aim": [10.0, -3.0], "name_sv": "Hörn A (hemma, vänster)", "name_en": "Corner A (home, left)", "mount_sv": "Ovanpå glaset", "mount_en": "On top of the glass"},
+    {"id": "B", "tier": 4, "x": 27.0, "y": 13.0, "z": 2.4, "aim": [-10.0, -3.0], "name_sv": "Hörn B (borta, vänster)", "name_en": "Corner B (away, left)", "mount_sv": "Ovanpå glaset", "mount_en": "On top of the glass"},
+    {"id": "C", "tier": 4, "x": 27.0, "y": -13.0, "z": 2.4, "aim": [-10.0, 3.0], "name_sv": "Hörn C (borta, höger)", "name_en": "Corner C (away, right)", "mount_sv": "Ovanpå glaset", "mount_en": "On top of the glass"},
+    {"id": "D", "tier": 4, "x": -27.0, "y": -13.0, "z": 2.4, "aim": [10.0, 3.0], "name_sv": "Hörn D (hemma, höger)", "name_en": "Corner D (home, right)", "mount_sv": "Ovanpå glaset", "mount_en": "On top of the glass"},
+    {"id": "E", "tier": 6, "x": -7.0, "y": 16.5, "z": 4.0, "aim": [20.0, 0.0], "name_sv": "Sida E (vid blålinjen, mot bortamålet)", "name_en": "Side E (at the blue line, towards away goal)", "mount_sv": "Högt, läktare/stolpe, fri sikt", "mount_en": "High, stands/pole, clear view"},
+    {"id": "F", "tier": 6, "x": 7.0, "y": -16.5, "z": 4.0, "aim": [-20.0, 0.0], "name_sv": "Sida F (vid blålinjen, mot hemmamålet)", "name_en": "Side F (at the blue line, towards home goal)", "mount_sv": "Högt, läktare/stolpe, fri sikt", "mount_en": "High, stands/pole, clear view"},
+    {"id": "G", "tier": 8, "x": -31.0, "y": 0.0, "z": 5.0, "aim": [-20.0, 0.0], "name_sv": "Bakom hemmamålet, högt", "name_en": "Behind home goal, high", "mount_sv": "Ovanför nätet", "mount_en": "Above the netting"},
+    {"id": "H", "tier": 8, "x": 31.0, "y": 0.0, "z": 5.0, "aim": [20.0, 0.0], "name_sv": "Bakom bortamålet, högt", "name_en": "Behind away goal, high", "mount_sv": "Ovanför nätet", "mount_en": "Above the netting"},
+]
 
 
 @dataclass

@@ -25,6 +25,15 @@
   .tabs { display: flex; gap: var(--s2); }
   .tabs .btn { min-height: 44px; }
   .tabs .btn.on { border-color: var(--accent); background: var(--accent-soft); }
+  .covmap { width: 100%; max-height: 220px; background: var(--surface-2); border-radius: var(--r-card); border: 1px solid var(--stroke); }
+  .covmap .ice { fill: #0f1a24; stroke: var(--stroke); stroke-width: .3; }
+  .covmap .line { stroke: var(--text-faint); stroke-width: .25; }
+  .covmap .cam { fill: var(--surface-3); stroke: var(--text-dim); stroke-width: .3; }
+  .covmap .cam.on { fill: var(--success); stroke: var(--success); }
+  .covmap .cam.t6 { stroke-dasharray: 1 .6; } .covmap .cam.t8 { stroke-dasharray: .4 .4; }
+  .covmap .cone { fill: var(--accent); fill-opacity: .08; stroke: none; }
+  .covmap .cone.on { fill-opacity: .22; }
+  .covmap text { font: 700 2.4px var(--font); fill: var(--text); text-anchor: middle; }
   .cam a.btn { min-height: 40px; padding: 0 12px; font-size: var(--small); }
   .cluster { display: grid; gap: var(--s2); justify-items: center; padding: var(--s3); border-radius: var(--r-card); border: 1px solid var(--stroke); background: var(--surface-2); cursor: pointer; }
   .cluster.on { border-color: var(--accent); background: var(--accent-soft); }
@@ -75,6 +84,8 @@
       <div class="card stack">
         <div class="row"><h2 data-i18n="lobby.cameras"></h2><span class="grow"></span><span class="chip faint" id="viewers"></span></div>
         <p class="dim" id="nocams" data-i18n="lobby.nocams"></p>
+        <svg class="covmap" id="covmap" viewBox="-36 -20 72 40"></svg>
+        <p class="faint" style="font-size: var(--small)" data-i18n="lobby.coverage"></p>
         <div class="cams" id="cams"></div>
         <details>
           <summary class="dim" style="cursor: pointer" data-i18n="lobby.external"></summary>
@@ -117,6 +128,25 @@ $("engine").textContent = `${t("lobby.engine")}: ${v.media}`;
 const hubInfo = await api("/api/hub");
 $("recdir").textContent = hubInfo.recordings_dir;
 
+const rinkInfo = await api("/api/rink").catch(() => null);
+function drawCoverage(cams) {
+  if (!rinkInfo) return;
+  const svg = $("covmap"); const o = rinkInfo.outline.map(([x, y]) => `${x},${-y}`).join(" ");
+  let s = `<polygon class="ice" points="${o}"/>`;
+  for (const [[x1, y1], [x2, y2]] of rinkInfo.lines) s += `<line class="line" x1="${x1}" y1="${-y1}" x2="${x2}" y2="${-y2}"/>`;
+  const live = new Set(cams.filter((c) => c.status !== "offline").map((c) => (c.position || "").toUpperCase()));
+  for (const l of rinkInfo.camera_layout) {
+    const on = live.has(l.id);
+    const ang = Math.atan2(-(l.aim[1] - l.y), l.aim[0] - l.x), fov = 0.55, r = 34;
+    const p1 = [l.x + r * Math.cos(ang - fov), -(l.y) + r * Math.sin(ang - fov)], p2 = [l.x + r * Math.cos(ang + fov), -(l.y) + r * Math.sin(ang + fov)];
+    s += `<polygon class="cone ${on ? "on" : ""}" points="${l.x},${-l.y} ${p1.join(",")} ${p2.join(",")}"/>`;
+  }
+  for (const l of rinkInfo.camera_layout) {
+    const on = live.has(l.id);
+    s += `<circle class="cam t${l.tier} ${on ? "on" : ""}" cx="${l.x}" cy="${-l.y}" r="1.9"/><text x="${l.x}" y="${-l.y + 0.9}">${l.id}</text>`;
+  }
+  svg.innerHTML = s;
+}
 let created = null, adminToken = sessionStorage.getItem("anysport.admin"), live;
 function show(c) {
   created = c;
@@ -144,6 +174,7 @@ function applyState(st) {
   clockBase = st.clock_ms; clockAt = performance.now(); running = st.clock_running;
   $("start").classList.toggle("hidden", st.status !== "lobby"); $("end").classList.toggle("hidden", st.status === "ended");
   $("nocams").classList.toggle("hidden", st.cameras.length > 0);
+  drawCoverage(st.cameras);
   refreshTeams(st);
   const wrap = $("cams"); wrap.innerHTML = "";
   for (const c of st.cameras) {
